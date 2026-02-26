@@ -1,63 +1,46 @@
-# IDE and Editor
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Dependencies
-node_modules/
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-package-lock.json
-yarn.lock
+.pnpm-debug.log*
 
-# Production build
-build/
-dist/
-out/
-.next/
-
-# Environment variables
+# local env files (CRITICAL SECURITY - DO NOT COMMIT SECRETS)
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+*.env
 
-# AWS
-.aws-sam/
-samconfig.toml
-.serverless/
-*.zip
+# vercel
+.vercel
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-venv/
-env/
-ENV/
-
-# Testing
-coverage/
-.nyc_output/
-*.lcov
-.jest/
-
-# Logs
-logs/
-*.log
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-
-# OS
-Thumbs.db
-.DS_Store
+# typescript
+*.tsbuildinfo
+next-env.d.ts
