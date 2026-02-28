@@ -105,3 +105,28 @@ body {
     user-select: text;
   }
 }
+
+/* Monaco Editor Fix: Hide internal textareas that Tailwind makes visible */
+.monaco-editor textarea {
+  position: absolute !important;
+  left: -9999px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Additional Monaco Editor fixes for white box and spacing */
+.monaco-editor textarea.inputarea {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  color: transparent !important;
+  caret-color: transparent !important;
+}
+
+/* Suppress browser extension injections (Grammarly, etc.) */
+.monaco-editor grammarly-extension,
+.monaco-editor .gr_ {
+  display: none !important;
+}

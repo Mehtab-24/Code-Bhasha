@@ -28,6 +28,15 @@ A mobile-first, web-based coding environment that removes the English-syntax bar
 - **Performance Monitoring**: Execution time tracking and display
 - **Worker Management**: Automatic worker respawning and cleanup
 
+### ✅ Desi Debugger - AWS Bedrock Integration (Phase 3)
+- **Hinglish Error Explanations**: Friendly, conversational error messages in Hindi/English mix
+- **AWS Bedrock**: Claude 3.5 Sonnet for intelligent error analysis
+- **Automatic Debugging**: Triggers on every Python error
+- **Fix Suggestions**: Actionable instructions on how to fix errors
+- **Corrected Code**: Shows the fixed version of problematic lines
+- **Smart UI**: Auto-switches to Debugger tab when errors occur
+- **Loading States**: Smooth animations while fetching explanations
+
 ### ✅ Interactive Components
 - **Animated Microphone**: Pulsing glow effect when recording
 - **Glassmorphism Panels**: Backdrop blur with subtle borders
@@ -45,6 +54,8 @@ A mobile-first, web-based coding environment that removes the English-syntax bar
 - **Python Runtime**: Pyodide (WebAssembly)
 - **State**: Zustand for execution state management
 - **Icons**: Lucide React
+- **AI/ML**: AWS Bedrock (Claude 3.5 Sonnet)
+- **Validation**: Zod for API input validation
 
 ## 🎨 Design System
 
@@ -63,6 +74,27 @@ A mobile-first, web-based coding environment that removes the English-syntax bar
 - **Scale Effects**: Hover and tap animations on buttons
 
 ## 🚀 Getting Started
+
+### Prerequisites
+- Node.js 20+ installed
+- AWS account with Bedrock access (for Phase 3 Desi Debugger)
+- AWS credentials with `bedrock:InvokeModel` permission
+
+### Environment Setup
+
+1. Copy the example environment file:
+```bash
+cp .env.local.example .env.local
+```
+
+2. Fill in your AWS credentials in `.env.local`:
+```env
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your_access_key_here
+AWS_SECRET_ACCESS_KEY=your_secret_key_here
+```
+
+### Installation & Development
 
 ```bash
 # Install dependencies
@@ -88,9 +120,9 @@ The interface is optimized for mobile devices starting at 360px width:
 
 ## 🎯 Next Steps
 
-Phase 2 is now complete! The foundation now includes full Python execution capabilities. Ready for Phase 3:
+Phase 3 is now complete! The Desi Debugger provides friendly Hinglish error explanations. Ready for Phase 4:
 
-1. **Desi Debugger**: AWS Lambda + Bedrock for Hinglish error explanations
+1. ~~**Desi Debugger**: AWS Lambda + Bedrock for Hinglish error explanations~~ ✅
 2. **Voice-to-Code**: Web Audio API + AWS Transcribe integration
 3. **Code Generation**: AWS Bedrock for Hinglish → Python conversion
 4. **Auto-complete**: Intent-based suggestions via Bedrock
@@ -102,10 +134,37 @@ Built following the design specifications in `design.md` and requirements in `re
 
 - **Phase 1**: Premium dark mode UI with glassmorphism design ✅
 - **Phase 2**: Client-side Python execution with Pyodide ✅
-- **Phase 3**: Desi Debugger (Next)
-- **Phase 4**: Voice-to-Code (Planned)
+- **Phase 3**: Desi Debugger with AWS Bedrock ✅
+- **Phase 4**: Voice-to-Code (Next)
 - **Phase 5**: Code Generation (Planned)
+
+## 🔧 API Routes
+
+### POST /api/debug
+Analyzes Python errors and returns friendly Hinglish explanations.
+
+**Request:**
+```json
+{
+  "code": "print('hello'",
+  "error": {
+    "type": "SyntaxError",
+    "message": "unexpected EOF while parsing",
+    "lineno": 1,
+    "line_text": "print('hello'"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "friendly_message": "Bhai, line 1 pe 'print' ke baad bracket band karna bhool gaye — ')' lagao",
+  "fix_suggestion": "Line 1 pe jaake 'print' statement ke end mein ')' add karo",
+  "corrected_line": "print('hello')"
+}
+```
 
 ---
 
-**Status**: ✅ Phase 2 Complete - Python execution ready! Next: Desi Debugger
+**Status**: ✅ Phase 3 Complete - Desi Debugger ready! Next: Voice-to-Code

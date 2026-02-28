@@ -162,17 +162,20 @@ sys.stderr = sys.__stderr__
       id: executionId
     } as DoneMessage);
     
-  } catch (error: any) {
+  } catch (error: unknown) {
     clearTimeout(timeoutId);
     
     // Parse Python error details
     let errorType = 'PythonError';
-    let errorMessage = error.message || 'Unknown error occurred';
+    let errorMessage = 'Unknown error occurred';
     let lineNumber = 0;
     let lineText = '';
     
-    // Extract line number from traceback if available
-    if (error.message) {
+    // Safely extract error message
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      
+      // Extract line number from traceback if available
       const lineMatch = error.message.match(/line (\d+)/);
       if (lineMatch) {
         lineNumber = parseInt(lineMatch[1], 10);
@@ -183,6 +186,8 @@ sys.stderr = sys.__stderr__
       if (typeMatch) {
         errorType = typeMatch[1];
       }
+    } else if (typeof error === 'string') {
+      errorMessage = error;
     }
     
     // Get the problematic line from code if possible

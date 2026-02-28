@@ -17,6 +17,12 @@ export interface ExecutionError {
   line_text: string;
 }
 
+export interface DebugResult {
+  friendly_message: string;
+  fix_suggestion: string;
+  corrected_line: string | null;
+}
+
 interface ExecutionState {
   // Execution state
   isExecuting: boolean;
@@ -28,6 +34,10 @@ interface ExecutionState {
   // Error state
   error: ExecutionError | null;
   errorLine: number | null;
+  
+  // Debug state
+  debugResult: DebugResult | null;
+  isFetchingDebug: boolean;
   
   // Performance
   executionTime: number | null;
@@ -42,6 +52,7 @@ interface ExecutionState {
   addOutputLine: (line: OutputLine) => void;
   setError: (error: ExecutionError | null) => void;
   setExecutionTime: (time: number | null) => void;
+  fetchDebugExplanation: (code: string, error: ExecutionError) => Promise<void>;
 }
 
 export const useExecutionStore = create<ExecutionState>((set, get) => ({
@@ -51,6 +62,8 @@ export const useExecutionStore = create<ExecutionState>((set, get) => ({
   output: [],
   error: null,
   errorLine: null,
+  debugResult: null,
+  isFetchingDebug: false,
   executionTime: null,
   isWorkerReady: false,
 
@@ -97,12 +110,18 @@ export const useExecutionStore = create<ExecutionState>((set, get) => ({
       
       // Handle errors
       else if (result.status === 'error' || result.status === 'timeout') {
+        const errorData = result.error || null;
         set({
           isExecuting: false,
-          error: result.error || null,
-          errorLine: result.error?.lineno || null,
+          error: errorData,
+          errorLine: errorData?.lineno || null,
           currentExecutionId: null
         });
+        
+        // Automatically fetch debug explanation when error occurs
+        if (errorData) {
+          get().fetchDebugExplanation(code, errorData);
+        }
       }
     });
 
@@ -114,6 +133,7 @@ export const useExecutionStore = create<ExecutionState>((set, get) => ({
       output: [],
       error: null,
       errorLine: null,
+      debugResult: null,
       executionTime: null
     });
   },
@@ -137,5 +157,34 @@ export const useExecutionStore = create<ExecutionState>((set, get) => ({
 
   setExecutionTime: (time: number | null) => {
     set({ executionTime: time });
+  },
+
+  fetchDebugExplanation: async (code: string, error: ExecutionError) => {
+    set({ isFetchingDebug: true, debugResult: null });
+    
+    try {
+      const response = await fetch('/api/debug', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, error })
+      });
+
+      if (!response.ok) {
+        throw new Error('Debug API request failed');
+      }
+
+      const result: DebugResult = await response.json();
+      set({ debugResult: result, isFetchingDebug: false });
+    } catch (err) {
+      console.error('Failed to fetch debug explanation:', err);
+      set({
+        debugResult: {
+          friendly_message: 'Bhai, debug explanation fetch nahi ho payi. Network check karo.',
+          fix_suggestion: 'Internet connection check karo aur dobara try karo.',
+          corrected_line: null
+        },
+        isFetchingDebug: false
+      });
+    }
   }
 }));
