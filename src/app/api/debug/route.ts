@@ -18,10 +18,10 @@ const client = new BedrockRuntimeClient({
 
 // 2. Input validation schema
 const DebugSchema = z.object({
-  code: z.string().max(10000), // Increased just in case you write long code later
+  code: z.string().max(10000), 
   error: z.object({
     type: z.string().max(100),
-    message: z.string().max(5000), // <--- THE FIX: Increased from 300 to 5000
+    message: z.string().max(5000), 
     lineno: z.number().int().min(1).max(5000),
     line_text: z.string().max(1000),
   }),
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { code, error } = DebugSchema.parse(body);
 
-    // 3. Construct the System and User prompts from design.md Section 8.2
+    // 3. Construct the System and User prompts
     const systemPrompt = `You are the "Desi Debugger" — a friendly senior developer who explains Python errors to beginners in conversational Hinglish (mix of Hindi and English).
     Your explanations must:
     1. Start with "Bhai" or "Yaar" to sound friendly.
@@ -50,27 +50,29 @@ export async function POST(req: Request) {
 
     const userPrompt = `Error Type: ${error.type}\nError Message: ${error.message}\nLine Number: ${error.lineno}\nProblematic Line: ${error.line_text}\nFull Code:\n${code}`;
 
-    // 4. Call Claude 3 Haiku on AWS Bedrock
+    // 4. Call Amazon Nova Micro (Bypasses Marketplace checks!)
     const payload = {
-      anthropic_version: "bedrock-2023-05-31",
-      max_tokens: 500,
-      temperature: 0.1,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }]
+      system: [{ text: systemPrompt }],
+      messages: [{ role: "user", content: [{ text: userPrompt }] }],
+      inferenceConfig: {
+        max_new_tokens: 500,
+        temperature: 0.1,
+      }
     };
 
     const command = new InvokeModelCommand({
-      modelId: "anthropic.claude-3-haiku-20240307-v1:0",
+      modelId: "amazon.nova-micro-v1:0", 
       contentType: "application/json",
       accept: "application/json",
       body: JSON.stringify(payload),
     });
 
     const response = await client.send(command);
-    const responseBody = JSON.parse(new TextDecoder().decode(response.body));
     
-    // 5. Safely parse Claude's response to guarantee JSON
-    const bedrockText = responseBody.content[0].text;
+    // 5. Safely parse Amazon Nova's response to guarantee JSON
+    const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+    const bedrockText = responseBody.output.message.content[0].text;
+    
     const jsonMatch = bedrockText.match(/\{[\s\S]*\}/);
     const finalJson = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(bedrockText);
 
