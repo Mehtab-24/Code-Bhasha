@@ -211,7 +211,7 @@ export function VoicePanel({ onCodeGenerated }: { onCodeGenerated?: (code: strin
     setIsRecording,
     setTranscript,
     generateCodeFromVoice,
-    generateCodeFromAudio,  // ← was called on line 318 but never destructured
+    generateCodeFromAudio,
     resetVoiceState,
   } = useExecutionStore();
 
@@ -312,6 +312,21 @@ export function VoicePanel({ onCodeGenerated }: { onCodeGenerated?: (code: strin
         // is the correct and ONLY place it should be set to false after a
         // successful recording. The catch block handles error paths.
         setIsRecording(false);
+
+        // NEW: Send audio to voice-to-code API
+        try {
+          console.log('[VoicePanel] Sending audio to voice-to-code API...');
+          const result = await generateCodeFromAudio(audioBlob);
+          
+          // Inject generated code into editor
+          if (result && result.code && onCodeGenerated) {
+            console.log('[VoicePanel] Code generated, injecting into editor');
+            onCodeGenerated(result.code);
+          }
+        } catch (err) {
+          console.error('[VoicePanel] Failed to generate code from audio:', err);
+          setError('Audio se code generate nahi ho paya. Transcript manually type karo aur "Code Banao" button dabao.');
+        }
       };
 
       recorder.start();
@@ -352,7 +367,7 @@ export function VoicePanel({ onCodeGenerated }: { onCodeGenerated?: (code: strin
         setError('Mic access mein problem hui. Browser settings check karo.');
       }
     }
-  }, [setIsRecording]);
+  }, [setIsRecording, generateCodeFromAudio, onCodeGenerated]);
 
   const stopRecording = useCallback(() => {
     // FIX: Always guard against null/inactive recorder.
@@ -498,6 +513,40 @@ export function VoicePanel({ onCodeGenerated }: { onCodeGenerated?: (code: strin
                   Permission dene ke baad button dobara dabao — page refresh ki zaroorat nahi.
                 </p>
               )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Loading State: Transcribing & Generating Code ──── */}
+      <AnimatePresence>
+        {isGeneratingCode && (
+          <motion.div
+            className="flex items-center gap-3 p-4 rounded-lg"
+            style={{
+              background: 'rgba(167,139,250,0.08)',
+              border: '1px solid rgba(167,139,250,0.2)',
+            }}
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+          >
+            <motion.div
+              className="w-5 h-5 rounded-full border-2 border-transparent"
+              style={{
+                borderTopColor: '#a78bfa',
+                borderRightColor: '#a78bfa',
+              }}
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+            />
+            <div className="flex-1">
+              <p className="text-sm font-medium" style={{ color: 'rgba(167,139,250,0.9)' }}>
+                🎙️ Audio transcribe ho raha hai aur code ban raha hai...
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'rgba(167,139,250,0.6)' }}>
+                Thoda wait karo, AI kaam kar raha hai
+              </p>
             </div>
           </motion.div>
         )}
