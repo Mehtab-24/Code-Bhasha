@@ -42,55 +42,51 @@ type MainThreadMessage = OutputMessage | ErrorMessage | DoneMessage | ReadyMessa
 
 let pyodide: PyodideInterface | null = null;
 let isInitialized = false;
+let currentExecutionId = '';
 
 // Initialize Pyodide
 async function initializePyodide() {
   try {
     console.log('[Worker] Loading Pyodide...');
-    
+
     pyodide = await loadPyodide({
       indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/',
     });
 
     // Install common packages that students might use
     await pyodide.loadPackage(['micropip']);
-    
-    // Set up stdout/stderr capture
-    pyodide.runPython(`
-import sys
-import io
-from contextlib import redirect_stdout, redirect_stderr
 
-class OutputCapture:
-    def __init__(self, message_type):
-        self.message_type = message_type
-        self.buffer = io.StringIO()
-    
-    def write(self, text):
-        if text.strip():  # Only send non-empty lines
-            # Send to main thread via postMessage
-            import js
-            js.postMessage({
-                'type': self.message_type,
-                'line': text.rstrip(),
-                'id': js.current_execution_id
-            })
-        self.buffer.write(text)
-    
-    def flush(self):
-        pass
+    // FIX: Use Pyodide's native stream hooks.
+    // The old approach (Python OutputCapture class + js.postMessage) required
+    // the 'js' module inside Python, which is unreliable. setStdout/setStderr
+    // are the correct JS-side API for intercepting Python output.
+    pyodide.setStdout({
+      batched: (line: string) => {
+        self.postMessage({
+          type: 'STDOUT',
+          line,
+          id: currentExecutionId,
+        } as OutputMessage);
+      },
+    });
 
-# Create custom stdout/stderr handlers
-stdout_capture = OutputCapture('STDOUT')
-stderr_capture = OutputCapture('STDERR')
-`);
+    pyodide.setStderr({
+      batched: (line: string) => {
+        self.postMessage({
+          type: 'STDERR',
+          line,
+          id: currentExecutionId,
+        } as OutputMessage);
+      },
+    });
 
     isInitialized = true;
     console.log('[Worker] Pyodide initialized successfully');
-    
-    // Notify main thread that worker is ready
+
+    // FIX: Post READY the moment loadPyodide() + stream setup is complete.
+    // This is the single source of truth for "worker is ready".
     self.postMessage({ type: 'READY' } as ReadyMessage);
-    
+
   } catch (error) {
     console.error('[Worker] Failed to initialize Pyodide:', error);
     self.postMessage({
@@ -99,9 +95,9 @@ stderr_capture = OutputCapture('STDERR')
         type: 'InitializationError',
         message: 'Browser execution load nahi ho raha. Page reload karo.',
         lineno: 0,
-        line_text: ''
+        line_text: '',
       },
-      id: 'init'
+      id: 'init',
     } as ErrorMessage);
   }
 }
@@ -115,15 +111,15 @@ async function executePythonCode(code: string, executionId: string) {
         type: 'NotInitialized',
         message: 'Python engine abhi ready nahi hai. Thoda wait karo.',
         lineno: 0,
-        line_text: ''
+        line_text: '',
       },
-      id: executionId
+      id: executionId,
     } as ErrorMessage);
     return;
   }
 
   const startTime = performance.now();
-  
+
   // Set up 10-second timeout
   const timeoutId = setTimeout(() => {
     console.log('[Worker] Execution timeout - terminating worker');
@@ -131,56 +127,45 @@ async function executePythonCode(code: string, executionId: string) {
   }, 10000);
 
   try {
-    // Set current execution ID for output capture
-    pyodide.globals.set('current_execution_id', executionId);
-    
-    // Redirect stdout/stderr to our custom handlers
-    pyodide.runPython(`
-import sys
-sys.stdout = stdout_capture
-sys.stderr = stderr_capture
-`);
+    // Track which execution's output we are collecting.
+    // setStdout/setStderr callbacks close over this variable.
+    currentExecutionId = executionId;
 
-    // Execute the user's code
+    // Execute the user's code.
+    // stdout/stderr are already redirected via setStdout/setStderr above —
+    // no need to touch sys.stdout inside Python.
     await pyodide.runPythonAsync(code);
-    
-    // Restore original stdout/stderr
-    pyodide.runPython(`
-sys.stdout = sys.__stdout__
-sys.stderr = sys.__stderr__
-`);
 
     const executionTime = performance.now() - startTime;
-    
+
     // Clear timeout since execution completed successfully
     clearTimeout(timeoutId);
-    
+
     // Notify main thread that execution is complete
     self.postMessage({
       type: 'DONE',
       executionTime: Math.round(executionTime),
-      id: executionId
+      id: executionId,
     } as DoneMessage);
-    
+
   } catch (error: unknown) {
     clearTimeout(timeoutId);
-    
+
     // Parse Python error details
     let errorType = 'PythonError';
     let errorMessage = 'Unknown error occurred';
     let lineNumber = 0;
     let lineText = '';
-    
-    // Safely extract error message
+
     if (error instanceof Error) {
       errorMessage = error.message;
-      
+
       // Extract line number from traceback if available
       const lineMatch = error.message.match(/line (\d+)/);
       if (lineMatch) {
         lineNumber = parseInt(lineMatch[1], 10);
       }
-      
+
       // Extract error type
       const typeMatch = error.message.match(/^(\w+Error?):/);
       if (typeMatch) {
@@ -189,7 +174,7 @@ sys.stderr = sys.__stderr__
     } else if (typeof error === 'string') {
       errorMessage = error;
     }
-    
+
     // Get the problematic line from code if possible
     if (lineNumber > 0) {
       const lines = code.split('\n');
@@ -197,18 +182,18 @@ sys.stderr = sys.__stderr__
         lineText = lines[lineNumber - 1].trim();
       }
     }
-    
+
     console.error('[Worker] Python execution error:', error);
-    
+
     self.postMessage({
       type: 'ERROR',
       payload: {
         type: errorType,
         message: errorMessage,
         lineno: lineNumber,
-        line_text: lineText
+        line_text: lineText,
       },
-      id: executionId
+      id: executionId,
     } as ErrorMessage);
   }
 }
@@ -216,7 +201,7 @@ sys.stderr = sys.__stderr__
 // Handle messages from main thread
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   const { type, code, id } = event.data;
-  
+
   if (type === 'EXECUTE') {
     await executePythonCode(code, id);
   }

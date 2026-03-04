@@ -23,6 +23,12 @@ export interface DebugResult {
   corrected_line: string | null;
 }
 
+export interface VoiceResult {
+  transcript: string;
+  code: string;
+  explanation: string;
+}
+
 interface ExecutionState {
   // Execution state
   isExecuting: boolean;
@@ -39,6 +45,12 @@ interface ExecutionState {
   debugResult: DebugResult | null;
   isFetchingDebug: boolean;
   
+  // Voice state
+  isRecording: boolean;
+  transcript: string;
+  isGeneratingCode: boolean;
+  voiceResult: VoiceResult | null;
+  
   // Performance
   executionTime: number | null;
   
@@ -53,6 +65,16 @@ interface ExecutionState {
   setError: (error: ExecutionError | null) => void;
   setExecutionTime: (time: number | null) => void;
   fetchDebugExplanation: (code: string, error: ExecutionError) => Promise<void>;
+  
+  // Voice actions
+  setIsRecording: (recording: boolean) => void;
+  setTranscript: (transcript: string) => void;
+  generateCodeFromVoice: (transcript: string) => Promise<VoiceResult>;
+  generateCodeFromAudio: (audioBlob: Blob) => Promise<VoiceResult>;
+  // FIX: New action to atomically reset all voice-related state on mount.
+  // Called from VoicePanel's useEffect so stale Zustand state from a
+  // previous session / HMR cycle can never bleed into a fresh mount.
+  resetVoiceState: () => void;
 }
 
 export const useExecutionStore = create<ExecutionState>((set, get) => ({
@@ -66,6 +88,12 @@ export const useExecutionStore = create<ExecutionState>((set, get) => ({
   isFetchingDebug: false,
   executionTime: null,
   isWorkerReady: false,
+  
+  // Voice state
+  isRecording: false,
+  transcript: '',
+  isGeneratingCode: false,
+  voiceResult: null,
 
   // Actions
   executeCode: (code: string) => {
@@ -185,6 +213,99 @@ export const useExecutionStore = create<ExecutionState>((set, get) => ({
         },
         isFetchingDebug: false
       });
+    }
+  },
+
+  // Voice actions
+  setIsRecording: (recording: boolean) => {
+    set({ isRecording: recording });
+  },
+
+  setTranscript: (transcript: string) => {
+    set({ transcript });
+  },
+
+  // FIX: Atomically reset all voice state fields to their initial values.
+  // Called on VoicePanel mount so stale isRecording=true (from HMR, hot
+  // navigation, or an interrupted session) never causes a permanently broken UI.
+  resetVoiceState: () => {
+    set({
+      isRecording: false,
+      isGeneratingCode: false,
+      voiceResult: null,
+      // Intentionally NOT resetting `transcript` — the user may want to keep
+      // what they typed between remounts (e.g. switching tabs and coming back).
+    });
+  },
+
+  generateCodeFromVoice: async (transcript: string) => {
+    set({ isGeneratingCode: true, voiceResult: null });
+    
+    try {
+      const response = await fetch('/api/voice-to-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: transcript })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Voice-to-code failed');
+      }
+
+      const result = await response.json();
+      set({ 
+        voiceResult: result,
+        transcript: result.transcript,
+        isGeneratingCode: false 
+      });
+      
+      return result;
+    } catch (err) {
+      console.error('Failed to generate code from voice:', err);
+      set({ isGeneratingCode: false });
+      throw err;
+    }
+  },
+
+  generateCodeFromAudio: async (audioBlob: Blob) => {
+    set({ isGeneratingCode: true, voiceResult: null });
+    
+    try {
+      // Convert blob to base64
+      const reader = new FileReader();
+      const base64Audio = await new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(audioBlob);
+      });
+
+      const response = await fetch('/api/voice-to-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          audio: base64Audio,
+          mimeType: audioBlob.type 
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Voice-to-code failed');
+      }
+
+      const result = await response.json();
+      set({ 
+        voiceResult: result,
+        transcript: result.transcript,
+        isGeneratingCode: false 
+      });
+      
+      return result;
+    } catch (err) {
+      console.error('Failed to generate code from audio:', err);
+      set({ isGeneratingCode: false });
+      throw err;
     }
   }
 }));

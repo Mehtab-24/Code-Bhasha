@@ -234,16 +234,31 @@ export function AppShell() {
     setWorkerReady,
   } = useExecutionStore();
 
-  // Initialize execution service and monitor worker readiness
+  // FIX: Replace the old polling + 30s timeout approach with a direct
+  // event subscription. The execution service calls our listener the
+  // instant it receives the READY message from the worker — no delay,
+  // no false-positive timeout error in the console.
   useEffect(() => {
     const executionService = getExecutionService();
-    const checkWorkerReady = () => {
-      const ready = executionService.isReady();
-      setWorkerReady(ready);
+
+    // If the singleton was already initialized before this component mounted
+    // (e.g. during hot module replacement), set ready immediately.
+    if (executionService.isReady()) {
+      setWorkerReady(true);
+      return;
+    }
+
+    // Subscribe — fires exactly once when the worker posts { type: 'READY' }.
+    // Returns an unsubscribe function we hand to React for cleanup.
+    const unsubscribe = executionService.onReady(() => {
+      setWorkerReady(true); // ← "Initializing..." clears the instant this runs
+    });
+
+    return () => {
+      // Removes the listener if AppShell unmounts before READY arrives.
+      // Prevents stale setState calls and memory leaks.
+      unsubscribe();
     };
-    checkWorkerReady();
-    const interval = setInterval(checkWorkerReady, 1000);
-    return () => clearInterval(interval);
   }, [setWorkerReady]);
 
   const handleRunCode = () => {
@@ -268,19 +283,19 @@ export function AppShell() {
 
   const itemVariants = {
     hidden: { opacity: 0, y: 16 },
-    visible: { 
-      opacity: 1, 
-      y: 0, 
-      transition: { 
-        duration: 0.45, 
-        ease: [0.25, 0.1, 0.25, 1] as [number, number, number, number]
-      } 
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: {
+        duration: 0.45,
+        ease: [0.25, 0.1, 0.25, 1] as [number, number, number, number],
+      },
     },
   };
 
   return (
     <div
-      className="min-h-screen flex flex-col relative overflow-hidden"
+      className="min-h-screen flex flex-col relative"
       style={{ background: '#080B0F' }}
     >
       {/* ── Scanline texture ───────────────────────────────── */}
@@ -356,7 +371,7 @@ export function AppShell() {
               exit={{ opacity: 0, y: -8, scale: 0.99 }}
               transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
             >
-              <VoicePanel />
+              <VoicePanel onCodeGenerated={(generatedCode) => setCode(generatedCode)} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -432,7 +447,7 @@ export function AppShell() {
           className="rounded-xl overflow-hidden"
           style={{
             background: 'rgba(0,0,0,0.4)',
-            border: `1px solid {isExecuting ? 'rgba(0, 255, 163, 0.2)' : 'rgba(255,255,255,0.07)'}`,
+            border: `1px solid ${isExecuting ? 'rgba(0, 255, 163, 0.2)' : 'rgba(255,255,255,0.07)'}`,
             backdropFilter: 'blur(16px)',
             boxShadow: isExecuting
               ? '0 0 24px rgba(0,255,163,0.06), inset 0 1px 0 rgba(0,255,163,0.04)'

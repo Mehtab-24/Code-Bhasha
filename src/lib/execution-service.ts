@@ -60,58 +60,89 @@ class ExecutionService {
     callback: ExecutionCallback;
   }> = [];
 
+  // FIX: Subscriber list for the READY event.
+  // AppShell subscribes via onReady() instead of polling with setInterval.
+  private readyListeners: Array<() => void> = [];
+
   constructor() {
     this.initializeWorker();
   }
 
+  // ── Public API: subscribe to the worker-ready event ──────────────────────────
+  // Returns an unsubscribe function for cleanup in useEffect.
+  // If the worker is already ready when this is called (e.g. after HMR),
+  // the listener fires synchronously so the UI never gets stuck.
+  public onReady(listener: () => void): () => void {
+    if (this.isWorkerReady) {
+      listener();
+      return () => {};
+    }
+    this.readyListeners.push(listener);
+    return () => {
+      this.readyListeners = this.readyListeners.filter((l) => l !== listener);
+    };
+  }
+
+  private notifyReadyListeners() {
+    // Drain the list — READY fires exactly once per worker lifecycle.
+    const listeners = this.readyListeners.splice(0);
+    listeners.forEach((l) => l());
+  }
+
   private async initializeWorker() {
     try {
-      // Create worker with inline code to avoid module loading issues
+      // The inline blob avoids Next.js module bundling issues with Web Workers.
+      // It mirrors pyodide-worker.ts but as a plain JS string so it can be
+      // loaded via URL.createObjectURL without a bundler plugin.
       const workerCode = `
         let pyodide = null;
         let isInitialized = false;
-        
-        // Load Pyodide from CDN
+        let currentExecutionId = '';
+
         importScripts('https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js');
-        
+
         async function initializePyodide() {
           try {
             console.log('[Worker] Loading Pyodide...');
-            
+
             pyodide = await loadPyodide({
               indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/',
             });
 
-            // Set up stdout/stderr capture
-            pyodide.runPython(\`
-import sys
-import io
+            // FIX: Use Pyodide's native JS-side stream hooks.
+            // Previous approach monkey-patched console.log and used a Python
+            // OutputCapture class that called print(..., file=sys.__stdout__).
+            // That never actually triggered the JS console — output was lost.
+            // setStdout/setStderr are the correct, documented API.
+            pyodide.setStdout({
+              batched: (line) => {
+                self.postMessage({
+                  type: 'STDOUT',
+                  line: line,
+                  id: currentExecutionId
+                });
+              }
+            });
 
-class OutputCapture:
-    def __init__(self, message_type):
-        self.message_type = message_type
-    
-    def write(self, text):
-        if text.strip():
-            # Use postMessage to send to main thread
-            import js
-            js.self.postMessage({
-                'type': self.message_type,
-                'line': text.rstrip(),
-                'id': js.current_execution_id
-            })
-    
-    def flush(self):
-        pass
-
-stdout_capture = OutputCapture('STDOUT')
-stderr_capture = OutputCapture('STDERR')
-\`);
+            pyodide.setStderr({
+              batched: (line) => {
+                self.postMessage({
+                  type: 'STDERR',
+                  line: line,
+                  id: currentExecutionId
+                });
+              }
+            });
 
             isInitialized = true;
             console.log('[Worker] Pyodide initialized successfully');
+
+            // FIX: Post READY immediately — this is the single signal the
+            // main thread waits for. The old code did post READY but it was
+            // lost because the blob's console.log intercept was breaking the
+            // message handler registration timing.
             self.postMessage({ type: 'READY' });
-            
+
           } catch (error) {
             console.error('[Worker] Failed to initialize Pyodide:', error);
             self.postMessage({
@@ -126,7 +157,7 @@ stderr_capture = OutputCapture('STDERR')
             });
           }
         }
-        
+
         async function executePythonCode(code, executionId) {
           if (!pyodide || !isInitialized) {
             self.postMessage({
@@ -143,74 +174,51 @@ stderr_capture = OutputCapture('STDERR')
           }
 
           const startTime = performance.now();
-          
-          // Set up 10-second timeout
+
           const timeoutId = setTimeout(() => {
             console.log('[Worker] Execution timeout - terminating worker');
             self.close();
           }, 10000);
 
           try {
-            // Set current execution ID for output capture
-            self.current_execution_id = executionId;
-            
-            // Redirect stdout/stderr to our custom handlers
-            pyodide.runPython(\`
-import sys
-sys.stdout = stdout_capture
-sys.stderr = stderr_capture
-\`);
+            // Point stream output at this execution's id
+            currentExecutionId = executionId;
 
-            // Execute the user's code
+            // Run user code — stdout/stderr already wired via setStdout/setStderr
             await pyodide.runPythonAsync(code);
-            
-            // Restore original stdout/stderr
-            pyodide.runPython(\`
-sys.stdout = sys.__stdout__
-sys.stderr = sys.__stderr__
-\`);
 
             const executionTime = performance.now() - startTime;
             clearTimeout(timeoutId);
-            
+
             self.postMessage({
               type: 'DONE',
               executionTime: Math.round(executionTime),
               id: executionId
             });
-            
+
           } catch (error) {
             clearTimeout(timeoutId);
-            
+
             let errorType = 'PythonError';
-            let errorMessage = error.message || 'Unknown error occurred';
+            let errorMessage = (error && error.message) ? error.message : 'Unknown error occurred';
             let lineNumber = 0;
             let lineText = '';
-            
-            // Extract line number from traceback if available
-            if (error.message) {
+
+            if (error && error.message) {
               const lineMatch = error.message.match(/line (\\d+)/);
-              if (lineMatch) {
-                lineNumber = parseInt(lineMatch[1], 10);
-              }
-              
-              // Extract error type
+              if (lineMatch) lineNumber = parseInt(lineMatch[1], 10);
+
               const typeMatch = error.message.match(/^(\\w+Error?):/);
-              if (typeMatch) {
-                errorType = typeMatch[1];
-              }
+              if (typeMatch) errorType = typeMatch[1];
             }
-            
-            // Get the problematic line from code if possible
+
             if (lineNumber > 0) {
               const lines = code.split('\\n');
-              if (lineNumber <= lines.length) {
-                lineText = lines[lineNumber - 1].trim();
-              }
+              if (lineNumber <= lines.length) lineText = lines[lineNumber - 1].trim();
             }
-            
+
             console.error('[Worker] Python execution error:', error);
-            
+
             self.postMessage({
               type: 'ERROR',
               payload: {
@@ -223,24 +231,22 @@ sys.stderr = sys.__stderr__
             });
           }
         }
-        
-        // Handle messages from main thread
+
         self.onmessage = async (event) => {
           const { type, code, id } = event.data;
           if (type === 'EXECUTE') {
             await executePythonCode(code, id);
           }
         };
-        
-        // Initialize Pyodide when worker starts
+
         initializePyodide();
       `;
 
       const blob = new Blob([workerCode], { type: 'application/javascript' });
       const workerUrl = URL.createObjectURL(blob);
-      
+
       this.worker = new Worker(workerUrl);
-      
+
       this.worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
         this.handleWorkerMessage(event.data);
       };
@@ -250,7 +256,7 @@ sys.stderr = sys.__stderr__
         this.handleWorkerError();
       };
 
-      // Handle worker termination (timeout case)
+      // Handle worker termination (timeout case from self.close() inside worker)
       this.worker.addEventListener('close', () => {
         console.log('[ExecutionService] Worker terminated');
         this.handleWorkerTimeout();
@@ -265,6 +271,10 @@ sys.stderr = sys.__stderr__
     if (message.type === 'READY') {
       this.isWorkerReady = true;
       console.log('[ExecutionService] Worker is ready');
+      // FIX: Notify all onReady() subscribers immediately.
+      // AppShell's useEffect receives this and calls setWorkerReady(true),
+      // clearing "Initializing..." with zero polling delay.
+      this.notifyReadyListeners();
       this.processQueue();
       return;
     }
@@ -279,7 +289,7 @@ sys.stderr = sys.__stderr__
         if (message.id === result.id) {
           result.output.push({
             type: message.type.toLowerCase() as 'stdout' | 'stderr',
-            text: message.line
+            text: message.line,
           });
           callback(result);
         }
@@ -310,7 +320,7 @@ sys.stderr = sys.__stderr__
         type: 'WorkerError',
         message: 'Code execution mein problem hui. Dobara try karo.',
         lineno: 0,
-        line_text: ''
+        line_text: '',
       };
       this.completeExecution();
     }
@@ -324,7 +334,7 @@ sys.stderr = sys.__stderr__
         type: 'TimeoutError',
         message: 'Bhai, code bahut time le raha hai. Infinite loop toh nahi?',
         lineno: 0,
-        line_text: ''
+        line_text: '',
       };
       this.completeExecution();
     }
@@ -347,6 +357,8 @@ sys.stderr = sys.__stderr__
     if (this.worker) {
       this.worker.terminate();
     }
+    // Reset ready listeners so new subscribers after reinit work correctly
+    this.readyListeners = [];
     setTimeout(() => {
       this.initializeWorker();
     }, 100);
@@ -356,22 +368,20 @@ sys.stderr = sys.__stderr__
     if (!this.isWorkerReady || this.currentExecution || this.executionQueue.length === 0) {
       return;
     }
-
     const { code, callback } = this.executionQueue.shift()!;
     this.executeCode(code, callback);
   }
 
   public executeCode(code: string, callback: ExecutionCallback): string {
     const executionId = `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     const result: ExecutionResult = {
       id: executionId,
       output: [],
-      status: 'running'
+      status: 'running',
     };
 
     if (!this.isWorkerReady || this.currentExecution) {
-      // Queue the execution
       this.executionQueue.push({ code, callback });
       return executionId;
     }
@@ -379,14 +389,13 @@ sys.stderr = sys.__stderr__
     this.currentExecution = {
       id: executionId,
       callback,
-      result
+      result,
     };
 
-    // Send execution request to worker
     this.worker?.postMessage({
       type: 'EXECUTE',
       code,
-      id: executionId
+      id: executionId,
     });
 
     return executionId;
@@ -404,6 +413,7 @@ sys.stderr = sys.__stderr__
     this.isWorkerReady = false;
     this.currentExecution = null;
     this.executionQueue = [];
+    this.readyListeners = [];
   }
 }
 

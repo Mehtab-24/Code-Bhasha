@@ -24,9 +24,27 @@
   --font-mono: var(--font-geist-mono);
 }
 
-/* Force dark mode */
+/* ─── FIX 3: Root scroll strategy ───────────────────────────────────────────
+ *
+ * OLD: overflow-x: hidden was on <body>. This is a well-documented iOS Safari
+ * bug trigger. When any overflow property is set on <body>, Safari creates an
+ * implicit scroll container ON the body element instead of the window/document.
+ * iOS expects the window to own scroll for momentum/rubber-band behaviour.
+ * The mismatch causes the stutter: content moves but momentum is killed because
+ * the wrong element owns the scroll context.
+ *
+ * FIX: Move overflow-x: hidden to <html>. The html element IS the document
+ * root scroll container on all browsers. Clipping horizontal overflow there
+ * is safe and does not create a competing scroll context.
+ *
+ * -webkit-overflow-scrolling: touch is kept for iOS < 15 safety.
+ * overflow-y is intentionally absent — the window scrolls naturally.
+ * ─────────────────────────────────────────────────────────────────────────── */
 html {
   color-scheme: dark;
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 body {
@@ -34,7 +52,8 @@ body {
   color: var(--foreground);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   min-height: 100vh;
-  overflow-x: hidden;
+  /* overflow-x: hidden — REMOVED, now on html (see above) */
+  /* overflow-y: auto   — REMOVED, window handles vertical scroll naturally */
 }
 
 /* Glassmorphism utility classes */
@@ -52,43 +71,31 @@ body {
 }
 
 /* Neon glow effects */
-.glow-cyan {
-  box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
-}
-
-.glow-violet {
-  box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
-}
-
-.glow-pink {
-  box-shadow: 0 0 20px rgba(236, 72, 153, 0.3);
-}
-
-.glow-green {
-  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
-}
+.glow-cyan  { box-shadow: 0 0 20px rgba(0, 255, 255, 0.3); }
+.glow-violet { box-shadow: 0 0 20px rgba(139, 92, 246, 0.3); }
+.glow-pink  { box-shadow: 0 0 20px rgba(236, 72, 153, 0.3); }
+.glow-green { box-shadow: 0 0 20px rgba(16, 185, 129, 0.3); }
 
 /* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-}
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: rgba(26, 26, 26, 0.5); }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
 
-::-webkit-scrollbar-track {
-  background: rgba(26, 26, 26, 0.5);
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-/* Mobile touch improvements */
+/* ─── FIX 4: Mobile touch — narrow user-select scope ────────────────────────
+ *
+ * OLD: user-select: none on <body> for all mobile.
+ * WebKit iOS uses the same gesture recogniser for text selection AND momentum
+ * scroll. When user-select is none on body, the browser pre-empts scroll
+ * gestures to check for selection intent, then cancels — causing the 1-2 frame
+ * jank at the START of every scroll gesture.
+ *
+ * FIX: Remove from body entirely. Apply the .no-select utility class only to
+ * specific UI chrome elements (buttons, labels, tab bars) that need it.
+ * The .editor-area override is kept exactly as before.
+ * ─────────────────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  body {
+  .no-select {
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     -khtml-user-select: none;
@@ -96,14 +103,32 @@ body {
     -ms-user-select: none;
     user-select: none;
   }
-  
-  /* Allow text selection in editor areas */
+
   .editor-area {
     -webkit-user-select: text;
     -moz-user-select: text;
     -ms-user-select: text;
     user-select: text;
   }
+}
+
+/* ─── FIX 5: Framer-motion passive scroll ────────────────────────────────────
+ *
+ * framer-motion attaches touch/wheel listeners as `passive: false` on animated
+ * elements. This blocks the browser compositor from starting a scroll frame
+ * until JavaScript finishes processing the event — the direct cause of scroll
+ * stutter on animated pages.
+ *
+ * `touch-action: pan-y` is the CSS-side contract that tells the compositor:
+ * "vertical panning is always allowed — don't wait for JS". Combined with
+ * passive listeners this gives full 60/120fps scroll performance.
+ *
+ * The broad `div[style*="transform"]` selector catches all framer-motion
+ * animated wrappers since they always inject inline transform/opacity styles.
+ * ─────────────────────────────────────────────────────────────────────────── */
+div[style*="transform"],
+div[style*="opacity"] {
+  touch-action: pan-y;
 }
 
 /* Monaco Editor Fix: Hide internal textareas that Tailwind makes visible */
@@ -114,7 +139,6 @@ body {
   pointer-events: none !important;
 }
 
-/* Additional Monaco Editor fixes for white box and spacing */
 .monaco-editor textarea.inputarea {
   background: transparent !important;
   background-color: transparent !important;

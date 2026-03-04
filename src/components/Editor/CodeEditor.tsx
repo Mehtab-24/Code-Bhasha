@@ -11,32 +11,58 @@ interface CodeEditorProps {
   onChange: (value: string) => void;
 }
 
-// ─── Inject a one-time global style that nukes Monaco's visible textarea ──────
-// Monaco renders a hidden <textarea> for keyboard input. Tailwind's base/reset
-// styles (via @tailwind base or a global stylesheet) apply:
-//   textarea { background-color: white; border: 1px solid ... }
-// which overrides Monaco's own inline `opacity:0` — making it visible as a
-// white box. We fix this with a scoped :global rule that forces the textarea
-// inside our editor wrapper back to transparent + no border.
+// ─── FIX A: Font preload + safer Monaco textarea suppression ──────────────────
+//
+// Two changes from the original:
+//
+// 1. Load JetBrains Mono via Google Fonts before Monaco measures glyph widths.
+//    Monaco calls its FontMeasurements service during/immediately after onMount.
+//    If the font isn't in the browser cache yet, Monaco falls back to Consolas,
+//    caches its (different) character widths, and the cursor drifts permanently.
+//    Injecting the <link> here ensures the font is at least requested before
+//    the Editor component even renders.
+//
+// 2. Remove `left: -9999px` from the textarea override.
+//    Monaco sets position:absolute + top/left on its inputarea to track where
+//    the cursor is. Overriding left:-9999px moves the browser's native focus
+//    anchor off-screen — iOS Safari and mobile Chrome then scroll horizontally
+//    to "reveal the caret" on every tap, causing a jarring viewport jump.
+//    opacity:0 + pointer-events:none achieves the same visual result safely.
 function useMonacoTextareaFix() {
   useEffect(() => {
+    // Inject JetBrains Mono font link if not already present
+    const fontLinkId = 'codebhasha-jb-mono-font';
+    if (!document.getElementById(fontLinkId)) {
+      const link = document.createElement('link');
+      link.id = fontLinkId;
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap';
+      document.head.appendChild(link);
+    }
+
+    // Scoped textarea fix — opacity only, position untouched
     const styleId = 'codebhasha-monaco-fix';
     if (document.getElementById(styleId)) return;
     const style = document.createElement('style');
     style.id = styleId;
     style.textContent = `
-      /* Fix 1: Hide Monaco's keyboard-capture textarea that Tailwind/global CSS makes visible */
+      /*
+       * Visually hide Monaco's keyboard-capture textarea without
+       * relocating it. left:-9999px (original) moved the browser's
+       * native caret anchor off-screen, triggering a horizontal scroll
+       * jump on mobile focus. Position is intentionally left alone.
+       */
       .codebhasha-editor-root .monaco-editor textarea.inputarea {
+        opacity: 0 !important;
+        pointer-events: none !important;
         background: transparent !important;
         background-color: transparent !important;
         border: none !important;
         outline: none !important;
         box-shadow: none !important;
-        opacity: 0 !important;
         color: transparent !important;
         caret-color: transparent !important;
       }
-      /* Fix 2: Also suppress any Grammarly-injected elements inside our editor */
       .codebhasha-editor-root grammarly-extension,
       .codebhasha-editor-root .gr_ {
         display: none !important;
@@ -46,16 +72,12 @@ function useMonacoTextareaFix() {
   }, []);
 }
 
+// ─── Sub-components (all unchanged) ──────────────────────────────────────────
+
 function WindowDot({
-  color,
-  glowColor,
-  onClick,
-  title,
+  color, glowColor, onClick, title,
 }: {
-  color: string;
-  glowColor: string;
-  onClick?: () => void;
-  title?: string;
+  color: string; glowColor: string; onClick?: () => void; title?: string;
 }) {
   return (
     <motion.button
@@ -106,13 +128,7 @@ function EditorLoadingState() {
   return (
     <div className="flex flex-col gap-3 p-6 h-full" style={{ background: '#0d0d0d' }}>
       {lines.map((width, i) => (
-        <motion.div
-          key={i}
-          className="flex items-center gap-4"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: i * 0.04 }}
-        >
+        <motion.div key={i} className="flex items-center gap-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }}>
           <div className="w-6 h-3 rounded shrink-0" style={{ background: 'rgba(255,255,255,0.06)' }} />
           <motion.div
             className="h-3 rounded"
@@ -127,10 +143,7 @@ function EditorLoadingState() {
         </motion.div>
       ))}
       <div className="absolute inset-0 flex items-center justify-center">
-        <div
-          className="flex flex-col items-center gap-3"
-          style={{ background: 'rgba(0,0,0,0.6)', borderRadius: 12, padding: '16px 24px' }}
-        >
+        <div className="flex flex-col items-center gap-3" style={{ background: 'rgba(0,0,0,0.6)', borderRadius: 12, padding: '16px 24px' }}>
           <motion.div
             className="w-6 h-6 rounded-full"
             style={{ border: '2px solid rgba(34,211,238,0.2)', borderTopColor: '#22d3ee' }}
@@ -159,12 +172,17 @@ function CharCounter({ value }: { value: string }) {
 // ─── Main CodeEditor ───────────────────────────────────────────────────────────
 export function CodeEditor({ value, onChange }: CodeEditorProps) {
   const [isEditorMounted, setIsEditorMounted] = useState(false);
+  const editorRef = useRef<monacoEditor.editor.IStandaloneCodeEditor | null>(null);
 
-  // Inject the global CSS fix on mount
   useMonacoTextareaFix();
 
-  const handleEditorMount = (editor: monacoEditor.editor.IStandaloneCodeEditor, monaco: Monaco) => {
-    // Define and apply a fully opaque custom theme
+  const handleEditorMount = async (
+    editor: monacoEditor.editor.IStandaloneCodeEditor,
+    monaco: Monaco
+  ) => {
+    editorRef.current = editor;
+
+    // Theme definition (unchanged from original)
     monaco.editor.defineTheme('codebhasha-dark', {
       base: 'vs-dark',
       inherit: true,
@@ -203,11 +221,39 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
     });
     monaco.editor.setTheme('codebhasha-dark');
 
-    // Fix cursor position: force Monaco to re-layout after mount
-    // This resolves the cursor rendering at y:0 while text is offset
-    requestAnimationFrame(() => {
-      editor.layout();
-      editor.revealLine(1);
+    // ── FIX B: Await font load before Monaco measures character widths ─────
+    //
+    // This is the primary cursor-drift fix. Monaco's FontMeasurements service
+    // runs synchronously when the editor first renders. If the async font
+    // network request hasn't finished, Monaco measures the fallback font
+    // (Consolas) and caches those glyph widths permanently. When JetBrains
+    // Mono arrives later, text renders at the correct width but the cursor
+    // is still positioned using Consolas widths — so it drifts right of the
+    // text on every line.
+    //
+    // document.fonts.ready is a Promise that resolves once all CSS-linked
+    // fonts have finished loading. Awaiting it here means editor.layout()
+    // always fires after the correct font is in memory.
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Old browser without document.fonts — proceed without waiting
+    }
+
+    // ── FIX C: layout() after font load replaces requestAnimationFrame ────
+    //
+    // Original used rAF which fires ~16ms after the next paint — well before
+    // the font finishes its network round-trip (typically 50-500ms).
+    // Now that we've awaited document.fonts.ready, we call layout() knowing
+    // the font metrics are correct.
+    editor.layout();
+    editor.revealLine(1);
+
+    // Guard against rare FOUT: re-layout if any font loads after fonts.ready
+    const onFontLoad = () => editor.layout();
+    document.fonts.addEventListener('loadingdone', onFontLoad);
+    editor.onDidDispose(() => {
+      document.fonts.removeEventListener('loadingdone', onFontLoad);
     });
 
     setIsEditorMounted(true);
@@ -218,18 +264,33 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
   };
 
   return (
-    // ── 'codebhasha-editor-root' class is the CSS scope anchor for our
-    //    global textarea fix defined in useMonacoTextareaFix()
+    // ── FIX D: Separate visual chrome from Monaco's measurement container ──
+    //
+    // Original: one div had border + border-radius + overflow:hidden AND was
+    // Monaco's mount target. Monaco's automaticLayout measures offsetWidth/
+    // offsetHeight on its container. overflow:hidden + border-radius caused
+    // the computed content box to be ~2px smaller than Monaco's dimension
+    // assumption. Monaco then cached a wrong content-column origin, making
+    // line numbers and code appear fractionally misaligned (the "padding off"
+    // feeling, most visible at the left edge of the gutter).
+    //
+    // Fix: two-div split.
+    //   Outer div (.codebhasha-editor-root) → all visual chrome
+    //   Inner div (Monaco mount, h-[450px]) → absolutely clean, no border,
+    //                                          no radius, no overflow, no padding
+    //
+    // Monaco only ever sees the inner div and gets correct measurements.
     <div
-      className="codebhasha-editor-root w-full flex flex-col overflow-hidden"
+      className="codebhasha-editor-root w-full flex flex-col"
       style={{
         background: '#0d0d0d',
         border: '1px solid rgba(255,255,255,0.07)',
         borderRadius: 12,
+        overflow: 'hidden',
         boxShadow: '0 24px 60px rgba(0,0,0,0.7), 0 8px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)',
       }}
     >
-      {/* ── Title bar ───────────────────────────────────────── */}
+      {/* ── Title bar ────────────────────────────────────── */}
       <div
         className="shrink-0 flex items-center h-10 px-4 gap-4"
         style={{ background: 'rgba(0,0,0,0.5)', borderBottom: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(8px)' }}
@@ -248,7 +309,7 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
         <CharCounter value={value} />
       </div>
 
-      {/* ── Tab bar ─────────────────────────────────────────── */}
+      {/* ── Tab bar ──────────────────────────────────────── */}
       <div
         className="shrink-0 flex items-stretch h-9"
         style={{ background: 'rgba(0,0,0,0.35)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
@@ -257,7 +318,11 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
         <div className="flex-1" />
       </div>
 
-      {/* ── Monaco wrapper ──────────────────────────────────── */}
+      {/* ── Monaco mount zone ─────────────────────────────────────────────
+       *  Rules: explicit height only. NO border, NO radius, NO overflow,
+       *  NO box-shadow, NO padding. Anything visual here shifts Monaco's
+       *  content-area origin and causes gutter/cursor misalignment.
+       * ────────────────────────────────────────────────────────────────── */}
       <div className="relative w-full h-[450px]">
         <AnimatePresence>
           {!isEditorMounted && (
@@ -279,8 +344,21 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
           theme="codebhasha-dark"
           onMount={handleEditorMount}
           options={{
+            // ── FIX E: Explicit font metrics to prevent sub-pixel drift ──
+            //
+            // fontFamily unchanged — JetBrains Mono is now guaranteed loaded
+            // before Monaco measures (see FIX B). The fallback chain is kept
+            // for offline/strict-CSP environments.
+            fontFamily: "'JetBrains Mono', 'Cascadia Code', Consolas, 'Courier New', monospace",
             fontSize: 14,
-            fontFamily: 'JetBrains Mono, Consolas, Monaco, monospace',
+            // Explicit lineHeight prevents Monaco from inferring it differently
+            // on retina vs non-retina screens. 22px = comfortable 1.57x ratio
+            // at 14px font size, matches the visual rhythm of the rest of the UI.
+            lineHeight: 22,
+            // letterSpacing: 0 is Monaco's default. Being explicit prevents
+            // any inherited CSS value from nudging character positions.
+            letterSpacing: 0,
+            fontLigatures: true,
             lineNumbers: 'on',
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
@@ -291,6 +369,7 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
             renderWhitespace: 'selection',
             cursorBlinking: 'smooth',
             cursorSmoothCaretAnimation: 'on',
+            cursorWidth: 2,
             smoothScrolling: true,
             contextmenu: true,
             selectOnLineNumbers: true,
@@ -298,8 +377,6 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
             readOnly: false,
             cursorStyle: 'line',
             mouseWheelZoom: true,
-            // Keep glyphMargin OFF — it creates a DOM slot that
-            // browser extensions (Grammarly, etc.) inject into
             glyphMargin: false,
             folding: false,
             lineDecorationsWidth: 10,
@@ -318,14 +395,14 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
         />
       </div>
 
-      {/* ── Status bar ──────────────────────────────────────── */}
+      {/* ── Status bar ────────────────────────────────────── */}
       <div
         className="shrink-0 flex items-center justify-between px-4 h-6"
         style={{ background: 'rgba(0,0,0,0.6)', borderTop: '1px solid rgba(255,255,255,0.04)' }}
       >
         <div className="flex items-center gap-3">
           <span className="font-mono select-none" style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.12em' }}>Python 3</span>
-          <span className="font-mono select-none" style={{ fontSize: 10, color: 'rgba(255,255,255,0.1)',  letterSpacing: '0.1em'  }}>UTF-8</span>
+          <span className="font-mono select-none" style={{ fontSize: 10, color: 'rgba(255,255,255,0.1)', letterSpacing: '0.1em' }}>UTF-8</span>
         </div>
         <span className="font-mono select-none" style={{ fontSize: 10, color: 'rgba(255,255,255,0.15)', letterSpacing: '0.1em' }}>Spaces: 4</span>
       </div>

@@ -1,8 +1,9 @@
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, MicOff, Sparkles } from 'lucide-react';
-import { useState } from 'react';
+import { Mic, MicOff, Sparkles, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useExecutionStore } from '@/store/useExecutionStore';
 
 // ─── Ripple Ring: single expanding ring ───────────────────────────────────────
 function RippleRing({
@@ -188,28 +189,210 @@ function MicButton({
 }
 
 // ─── Main VoicePanel ──────────────────────────────────────────────────────────
-export function VoicePanel() {
-  const [isRecording, setIsRecording] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
+export function VoicePanel({ onCodeGenerated }: { onCodeGenerated?: (code: string) => void }) {
+  const [error, setError] = useState<string>('');
 
-  const handleStartRecording = () => {
-    setIsRecording(true);
-    setTimeout(() => {
+  // FIX 1: Use a ref instead of useState for mediaRecorder.
+  // This eliminates the desync between local React state (which resets on
+  // remount) and Zustand state (which persists across remounts/HMR).
+  // A ref is the correct tool here — we never need to re-render based on
+  // whether mediaRecorder itself changed, only on isRecording from the store.
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+
+  // FIX 2: Also ref the stream so we can reliably stop all tracks on
+  // cleanup — even if the component unmounts mid-recording.
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const {
+    isRecording,
+    transcript,
+    isGeneratingCode,
+    voiceResult,
+    setIsRecording,
+    setTranscript,
+    generateCodeFromVoice,
+    generateCodeFromAudio,  // ← was called on line 318 but never destructured
+    resetVoiceState,
+  } = useExecutionStore();
+
+  // FIX 3: Reset stale Zustand voice state on every mount.
+  // Scenario this prevents: user was recording → navigated away (or HMR fired)
+  // → component remounts with isRecording=true from the store but
+  // mediaRecorderRef.current=null. Without this reset the mic button would
+  // call stopRecording(), find no recorder, and be permanently stuck.
+  useEffect(() => {
+    resetVoiceState();
+
+    // FIX 4: Cleanup on unmount — stop the stream and recorder if the user
+    // navigates away or HMR fires while recording is in progress.
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      // Synchronise store so next mount starts clean
       setIsRecording(false);
-      setTranscript('Ek function banao jo 1 se 10 tak numbers print kare');
-    }, 3000);
-  };
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps: run once on mount, cleanup once on unmount
 
-  const handleStopRecording = () => {
-    setIsRecording(false);
-  };
+  // FIX 5: Subscribe to the Permissions API so the error banner automatically
+  // clears and the button unlocks the moment the user grants mic permission
+  // in browser settings — without requiring a full page refresh.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.permissions) return;
 
-  const handleGenerateCode = () => {
-    setIsGenerating(true);
-    setTimeout(() => {
-      setIsGenerating(false);
-    }, 2000);
+    let permissionStatus: PermissionStatus | null = null;
+
+    navigator.permissions
+      .query({ name: 'microphone' as PermissionName })
+      .then((status) => {
+        permissionStatus = status;
+        // If already granted, clear any stale error from a previous denial
+        if (status.state === 'granted') {
+          setError('');
+        }
+        // Re-runs whenever the user changes the permission in browser settings
+        status.onchange = () => {
+          if (status.state === 'granted') {
+            setError('');
+          }
+        };
+      })
+      .catch(() => {
+        // Permissions API not supported in this browser — silently ignore
+      });
+
+    return () => {
+      if (permissionStatus) {
+        permissionStatus.onchange = null;
+      }
+    };
+  }, []);
+
+  const startRecording = useCallback(async () => {
+    // FIX 6: Clear ALL error state before attempting getUserMedia.
+    // The old code set setError('') (empty string) which is falsy and works
+    // for the AnimatePresence condition, but being explicit with null-like
+    // empty string is fragile. We keep the same local string state but
+    // guarantee it's wiped before the attempt.
+    setError('');
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Store stream in ref so unmount cleanup can always reach it
+      streamRef.current = stream;
+
+      const recorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
+
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunks.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        console.log('[VoicePanel] Recording stopped, blob size:', audioBlob.size);
+
+        // Stop all tracks and clear refs
+        stream.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+        mediaRecorderRef.current = null;
+
+        // FIX 7: setIsRecording(false) is called here (in onstop) — but this
+        // is the correct and ONLY place it should be set to false after a
+        // successful recording. The catch block handles error paths.
+        setIsRecording(false);
+      };
+
+      recorder.start();
+
+      // Store in ref — survives remounts, never causes stale closure issues
+      mediaRecorderRef.current = recorder;
+
+      // Only set recording=true after recorder.start() succeeds, never before
+      setIsRecording(true);
+
+    } catch (err) {
+      console.error('[VoicePanel] Microphone access error:', err);
+
+      // Clean up any partial stream that may have been created
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      mediaRecorderRef.current = null;
+
+      // FIX 7: Always reset isRecording to false in the error path.
+      // This guarantees the mic button returns to idle state regardless
+      // of what order the state updates fired before the error.
+      setIsRecording(false);
+
+      // Set the human-readable error — but crucially, this does NOT
+      // permanently prevent retrying. The next click calls startRecording()
+      // which clears the error first (line above), then re-attempts getUserMedia.
+      if (err instanceof Error) {
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          setError('Mic ki permission chahiye. Browser ke address bar mein mic icon click karo aur "Allow" karo.');
+        } else if (err.name === 'NotFoundError') {
+          setError('Microphone nahi mila. Check karo ki mic connected hai.');
+        } else {
+          setError('Mic access mein problem hui. Browser settings check karo.');
+        }
+      } else {
+        setError('Mic access mein problem hui. Browser settings check karo.');
+      }
+    }
+  }, [setIsRecording]);
+
+  const stopRecording = useCallback(() => {
+    // FIX: Always guard against null/inactive recorder.
+    // Old code: `if (mediaRecorder && mediaRecorder.state !== 'inactive')`
+    // where mediaRecorder was useState — reset to null on remount, causing
+    // stopRecording() to silently no-op and isRecording to stay true forever.
+    // New code: ref is always current, even across remounts.
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+      // Note: setIsRecording(false) is called inside recorder.onstop,
+      // not here, to avoid a double-update race condition.
+    } else {
+      // Recorder is gone (e.g. stale state) — force-reset the store flag
+      // so the UI doesn't stay locked in recording mode.
+      setIsRecording(false);
+    }
+  }, [setIsRecording]);
+
+  const handleMicClick = useCallback(() => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  }, [isRecording, startRecording, stopRecording]);
+
+  const handleGenerateCode = async () => {
+    if (!transcript.trim()) return;
+    
+    try {
+      setError('');
+      const result = await generateCodeFromVoice(transcript);
+      
+      if (result && 'code' in result && result.code && onCodeGenerated) {
+        onCodeGenerated(result.code);
+      }
+    } catch (err) {
+      console.error('[VoicePanel] Code generation error:', err);
+      setError('Code generation mein problem hui. Dobara try karo.');
+    }
   };
 
   return (
@@ -256,7 +439,7 @@ export function VoicePanel() {
         {/* ── Mic Button ── */}
         <MicButton
           isRecording={isRecording}
-          onClick={isRecording ? handleStopRecording : handleStartRecording}
+          onClick={handleMicClick}
         />
 
         {/* ── Waveform Visualizer ── */}
@@ -286,6 +469,39 @@ export function VoicePanel() {
 
       {/* ── Divider ─────────────────────────────────────────── */}
       <div style={{ height: 1, background: 'rgba(255,255,255,0.05)' }} />
+
+      {/* ── Error Message ───────────────────────────────────── */}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            className="flex items-start gap-2 p-3 rounded-lg"
+            style={{
+              background: 'rgba(239,68,68,0.08)',
+              border: '1px solid rgba(239,68,68,0.2)',
+            }}
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+          >
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: '#f87171' }} />
+            <div className="flex-1">
+              <p className="text-xs leading-relaxed" style={{ color: 'rgba(248,113,113,0.9)' }}>
+                {error}
+              </p>
+              {/* Retry hint — only shown for permission errors since those require
+                  the user to act in the browser UI before clicking again */}
+              {(error.includes('permission') || error.includes('Allow')) && (
+                <p
+                  className="text-xs mt-1.5 font-medium"
+                  style={{ color: 'rgba(34,211,238,0.7)' }}
+                >
+                  Permission dene ke baad button dobara dabao — page refresh ki zaroorat nahi.
+                </p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Transcript Section ──────────────────────────────── */}
       <AnimatePresence>
@@ -338,40 +554,40 @@ export function VoicePanel() {
                   caretColor: '#22d3ee',
                 }}
                 rows={3}
-                placeholder="Yahan aapki baat dikhegi..."
+                placeholder="Recording ke baad yahan type karo kya bolna tha..."
               />
             </div>
 
             {/* Generate Button */}
             <motion.button
               onClick={handleGenerateCode}
-              disabled={isGenerating || !transcript.trim()}
+              disabled={isGeneratingCode || !transcript.trim()}
               className="relative w-full flex items-center justify-center gap-2.5 py-3.5 px-6 rounded-xl text-sm font-semibold tracking-wide overflow-hidden group"
               style={{
                 background:
-                  isGenerating || !transcript.trim()
+                  isGeneratingCode || !transcript.trim()
                     ? 'rgba(255,255,255,0.04)'
                     : 'rgba(167,139,250,0.12)',
                 border: `1px solid ${
-                  isGenerating || !transcript.trim()
+                  isGeneratingCode || !transcript.trim()
                     ? 'rgba(255,255,255,0.07)'
                     : 'rgba(167,139,250,0.4)'
                 }`,
                 color:
-                  isGenerating || !transcript.trim()
+                  isGeneratingCode || !transcript.trim()
                     ? 'rgba(255,255,255,0.2)'
                     : '#a78bfa',
                 boxShadow:
-                  !isGenerating && transcript.trim()
+                  !isGeneratingCode && transcript.trim()
                     ? '0 0 24px rgba(167,139,250,0.1), inset 0 1px 0 rgba(167,139,250,0.1)'
                     : 'none',
-                cursor: isGenerating || !transcript.trim() ? 'not-allowed' : 'pointer',
+                cursor: isGeneratingCode || !transcript.trim() ? 'not-allowed' : 'pointer',
               }}
-              whileHover={!isGenerating && !!transcript.trim() ? { scale: 1.01 } : {}}
-              whileTap={!isGenerating && !!transcript.trim() ? { scale: 0.98 } : {}}
+              whileHover={!isGeneratingCode && !!transcript.trim() ? { scale: 1.01 } : {}}
+              whileTap={!isGeneratingCode && !!transcript.trim() ? { scale: 0.98 } : {}}
             >
               {/* Shimmer sweep */}
-              {!isGenerating && transcript.trim() && (
+              {!isGeneratingCode && transcript.trim() && (
                 <motion.div
                   className="absolute inset-0 opacity-0 group-hover:opacity-100"
                   style={{
@@ -384,15 +600,32 @@ export function VoicePanel() {
               )}
 
               <motion.div
-                animate={isGenerating ? { rotate: 360 } : { rotate: 0 }}
-                transition={isGenerating ? { duration: 2, repeat: Infinity, ease: 'linear' } : {}}
+                animate={isGeneratingCode ? { rotate: 360 } : { rotate: 0 }}
+                transition={isGeneratingCode ? { duration: 2, repeat: Infinity, ease: 'linear' } : {}}
               >
                 <Sparkles className="w-4 h-4 relative z-10" />
               </motion.div>
               <span className="relative z-10">
-                {isGenerating ? 'Code ban raha hai...' : '✨ Code Banao'}
+                {isGeneratingCode ? 'Code ban raha hai...' : '✨ Code Banao'}
               </span>
             </motion.button>
+
+            {/* Success message */}
+            {voiceResult && (
+              <motion.div
+                className="p-3 rounded-lg"
+                style={{
+                  background: 'rgba(74,222,128,0.08)',
+                  border: '1px solid rgba(74,222,128,0.2)',
+                }}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <p className="text-xs leading-relaxed" style={{ color: 'rgba(74,222,128,0.9)' }}>
+                  ✅ {voiceResult.explanation}
+                </p>
+              </motion.div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
