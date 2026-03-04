@@ -11,58 +11,10 @@ const bedrockClient = new BedrockRuntimeClient({
   }
 });
 
-
-
 // Input validation schema
 const VoiceToCodeSchema = z.object({
-  audio: z.string(), // base64 encoded audio
-  mimeType: z.string().optional().default('audio/webm'),
+  text: z.string().min(1, 'Transcript cannot be empty').max(500, 'Transcript too long'),
 });
-
-// Helper function to convert base64 to buffer
-function base64ToBuffer(base64: string): Buffer {
-  const base64Data = base64.replace(/^data:audio\/\w+;base64,/, '');
-  return Buffer.from(base64Data, 'base64');
-}
-
-// Mock audio transcription service
-// In production, replace this with real AWS Transcribe integration
-async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
-  try {
-    console.log('[Voice-to-Code] Starting mock audio transcription...');
-    
-    // Simulate transcription processing time
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Mock transcription results based on audio size (for demo purposes)
-    const audioSize = audioBuffer.length;
-    
-    // Mock transcriptions for common programming commands in Hinglish
-    const mockTranscriptions = [
-      "Ek loop banao jo 1 se 10 tak numbers print kare",
-      "Function banao jiska naam greet ho aur wo hello world print kare",
-      "List banao numbers ki 1 se 5 tak aur uska sum print karo",
-      "Number check karo agar 10 se bada hai toh big print karo warna small",
-      "String banao hello world aur usko uppercase mein print karo",
-      "Ek dictionary banao student ki details ke liye",
-      "For loop chalao aur har iteration mein counter print karo",
-      "If else condition lagao temperature check karne ke liye",
-      "Function banao jo factorial calculate kare",
-      "List comprehension use karke even numbers nikalo"
-    ];
-    
-    // Select a random transcription based on audio size
-    const index = Math.floor((audioSize * 7) % mockTranscriptions.length);
-    const transcript = mockTranscriptions[index];
-    
-    console.log('[Voice-to-Code] Mock transcription completed:', transcript);
-    return transcript;
-    
-  } catch (error) {
-    console.error('[Voice-to-Code] Mock transcription error:', error);
-    throw new Error('Audio transcription failed');
-  }
-}
 
 // Generate Python code from Hinglish text using Amazon Nova Micro
 async function generatePythonCode(hinglishText: string): Promise<{ code: string; explanation: string }> {
@@ -154,45 +106,31 @@ export async function POST(req: Request) {
     const body = await req.json();
     
     // Validate input
-    const { audio, mimeType } = VoiceToCodeSchema.parse(body);
+    const { text } = VoiceToCodeSchema.parse(body);
 
-    console.log('[Voice-to-Code] Received audio, mime type:', mimeType);
+    console.log('[Voice-to-Code] Received transcript:', text);
 
-    // Convert base64 audio to buffer (for future transcription use)
-    const _audioBuffer = base64ToBuffer(audio);
+    // Use the transcript directly (no need for audio transcription)
+    const transcript = text.trim();
 
-    // Step 1: Transcribe audio to text
-    let transcript = '';
-    
-    try {
-      // Try to transcribe the audio
-      transcript = await transcribeAudio(_audioBuffer);
-      console.log('[Voice-to-Code] Transcription successful:', transcript);
-    } catch (transcribeError) {
-      console.error('[Voice-to-Code] Transcription failed, falling back to text input:', transcribeError);
-      
-      // Fallback to direct text input if transcription fails
-      transcript = (body as { text?: string }).text || '';
-      
-      if (!transcript) {
-        return NextResponse.json(
-          { 
-            error: 'Transcription failed',
-            message: 'Bhai, audio transcription mein problem hui. Text input use karo ya dobara try karo.'
-          },
-          { status: 501 }
-        );
-      }
+    if (!transcript) {
+      return NextResponse.json(
+        { 
+          error: 'Empty transcript',
+          message: 'Bhai, kuch bolo toh sahi. Transcript khali hai.'
+        },
+        { status: 400 }
+      );
     }
 
-    console.log('[Voice-to-Code] Transcript:', transcript);
+    console.log('[Voice-to-Code] Processing transcript:', transcript);
 
-    // Step 2: Generate Python code from transcript
+    // Generate Python code from transcript using Amazon Nova Micro
     const { code, explanation } = await generatePythonCode(transcript);
 
     console.log('[Voice-to-Code] Generated code successfully');
 
-    // Return both transcript and generated code
+    // Return transcript and generated code
     return NextResponse.json({
       transcript,
       code,

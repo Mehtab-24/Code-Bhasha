@@ -191,17 +191,10 @@ function MicButton({
 // ─── Main VoicePanel ──────────────────────────────────────────────────────────
 export function VoicePanel({ onCodeGenerated }: { onCodeGenerated?: (code: string) => void }) {
   const [error, setError] = useState<string>('');
+  const [interimTranscript, setInterimTranscript] = useState<string>('');
 
-  // FIX 1: Use a ref instead of useState for mediaRecorder.
-  // This eliminates the desync between local React state (which resets on
-  // remount) and Zustand state (which persists across remounts/HMR).
-  // A ref is the correct tool here — we never need to re-render based on
-  // whether mediaRecorder itself changed, only on isRecording from the store.
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-
-  // FIX 2: Also ref the stream so we can reliably stop all tracks on
-  // cleanup — even if the component unmounts mid-recording.
-  const streamRef = useRef<MediaStream | null>(null);
+  // Use ref for SpeechRecognition instance
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   const {
     isRecording,
@@ -211,29 +204,116 @@ export function VoicePanel({ onCodeGenerated }: { onCodeGenerated?: (code: strin
     setIsRecording,
     setTranscript,
     generateCodeFromVoice,
-    generateCodeFromAudio,
     resetVoiceState,
   } = useExecutionStore();
 
   // FIX 3: Reset stale Zustand voice state on every mount.
-  // Scenario this prevents: user was recording → navigated away (or HMR fired)
-  // → component remounts with isRecording=true from the store but
-  // mediaRecorderRef.current=null. Without this reset the mic button would
-  // call stopRecording(), find no recorder, and be permanently stuck.
   useEffect(() => {
     resetVoiceState();
 
-    // FIX 4: Cleanup on unmount — stop the stream and recorder if the user
-    // navigates away or HMR fires while recording is in progress.
+    // Initialize Speech Recognition
+    if (typeof window !== 'undefined') {
+      const SpeechRecognitionAPI = window.SpeechRecognition || (window as Window & { webkitSpeechRecognition: new () => SpeechRecognition }).webkitSpeechRecognition;
+      
+      if (SpeechRecognitionAPI) {
+        const recognition = new SpeechRecognitionAPI();
+        
+        // Configure recognition for Hinglish
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.lang = 'hi-IN'; // Hindi-India for Hinglish support
+        recognition.maxAlternatives = 1;
+
+        // Handle real-time results
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
+          let interim = '';
+          let final = '';
+
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcriptPart = event.results[i][0].transcript;
+            
+            if (event.results[i].isFinal) {
+              final += transcriptPart + ' ';
+            } else {
+              interim += transcriptPart;
+            }
+          }
+
+          // Update interim transcript for live display
+          if (interim) {
+            setInterimTranscript(interim);
+          }
+
+          // Update final transcript in store
+          if (final) {
+            const currentTranscript = transcript || '';
+            const newTranscript = (currentTranscript + final).trim();
+            setTranscript(newTranscript);
+            setInterimTranscript(''); // Clear interim when we have final
+          }
+        };
+
+        // Handle recognition end
+        recognition.onend = async () => {
+          console.log('[VoicePanel] Speech recognition ended');
+          setIsRecording(false);
+          setInterimTranscript('');
+
+          // Get the final transcript
+          const finalTranscript = transcript.trim();
+
+          // If we have a transcript, generate code
+          if (finalTranscript) {
+            try {
+              console.log('[VoicePanel] Generating code from transcript:', finalTranscript);
+              const result = await generateCodeFromVoice(finalTranscript);
+              
+              if (result && result.code && onCodeGenerated) {
+                console.log('[VoicePanel] Code generated, injecting into editor');
+                onCodeGenerated(result.code);
+              }
+            } catch (err) {
+              console.error('[VoicePanel] Failed to generate code:', err);
+              setError('Code generation mein problem hui. Dobara try karo.');
+            }
+          }
+        };
+
+        // Handle errors
+        recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+          console.error('[VoicePanel] Speech recognition error:', event.error);
+          setIsRecording(false);
+          setInterimTranscript('');
+
+          if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+            setError('Mic ki permission chahiye. Browser settings mein jaake allow karo.');
+          } else if (event.error === 'no-speech') {
+            setError('Kuch sunai nahi diya. Dobara try karo aur zor se bolo.');
+          } else if (event.error === 'audio-capture') {
+            setError('Microphone nahi mila. Check karo ki mic connected hai.');
+          } else if (event.error === 'network') {
+            setError('Internet connection check karo.');
+          } else {
+            setError('Speech recognition mein problem hui. Dobara try karo.');
+          }
+        };
+
+        recognitionRef.current = recognition;
+      } else {
+        console.warn('[VoicePanel] Speech Recognition API not supported');
+        setError('Tumhara browser speech recognition support nahi karta. Chrome ya Edge use karo.');
+      }
+    }
+
+    // Cleanup on unmount
     return () => {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // Ignore errors on cleanup
+        }
       }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-      }
-      // Synchronise store so next mount starts clean
       setIsRecording(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -274,114 +354,44 @@ export function VoicePanel({ onCodeGenerated }: { onCodeGenerated?: (code: strin
   }, []);
 
   const startRecording = useCallback(async () => {
-    // FIX 6: Clear ALL error state before attempting getUserMedia.
-    // The old code set setError('') (empty string) which is falsy and works
-    // for the AnimatePresence condition, but being explicit with null-like
-    // empty string is fragile. We keep the same local string state but
-    // guarantee it's wiped before the attempt.
     setError('');
+    setInterimTranscript('');
+
+    if (!recognitionRef.current) {
+      setError('Speech recognition available nahi hai. Browser update karo.');
+      return;
+    }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-      // Store stream in ref so unmount cleanup can always reach it
-      streamRef.current = stream;
-
-      const recorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
-      });
-
-      const chunks: Blob[] = [];
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunks.push(event.data);
-        }
-      };
-
-      recorder.onstop = async () => {
-        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
-        console.log('[VoicePanel] Recording stopped, blob size:', audioBlob.size);
-
-        // Stop all tracks and clear refs
-        stream.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-        mediaRecorderRef.current = null;
-
-        // FIX 7: setIsRecording(false) is called here (in onstop) — but this
-        // is the correct and ONLY place it should be set to false after a
-        // successful recording. The catch block handles error paths.
-        setIsRecording(false);
-
-        // NEW: Send audio to voice-to-code API
-        try {
-          console.log('[VoicePanel] Sending audio to voice-to-code API...');
-          const result = await generateCodeFromAudio(audioBlob);
-          
-          // Inject generated code into editor
-          if (result && result.code && onCodeGenerated) {
-            console.log('[VoicePanel] Code generated, injecting into editor');
-            onCodeGenerated(result.code);
-          }
-        } catch (err) {
-          console.error('[VoicePanel] Failed to generate code from audio:', err);
-          setError('Audio se code generate nahi ho paya. Transcript manually type karo aur "Code Banao" button dabao.');
-        }
-      };
-
-      recorder.start();
-
-      // Store in ref — survives remounts, never causes stale closure issues
-      mediaRecorderRef.current = recorder;
-
-      // Only set recording=true after recorder.start() succeeds, never before
+      // Clear previous transcript before starting new recording
+      setTranscript('');
+      
+      console.log('[VoicePanel] Starting speech recognition...');
+      recognitionRef.current.start();
       setIsRecording(true);
-
     } catch (err) {
-      console.error('[VoicePanel] Microphone access error:', err);
-
-      // Clean up any partial stream that may have been created
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-      }
-      mediaRecorderRef.current = null;
-
-      // FIX 7: Always reset isRecording to false in the error path.
-      // This guarantees the mic button returns to idle state regardless
-      // of what order the state updates fired before the error.
+      console.error('[VoicePanel] Failed to start recognition:', err);
       setIsRecording(false);
-
-      // Set the human-readable error — but crucially, this does NOT
-      // permanently prevent retrying. The next click calls startRecording()
-      // which clears the error first (line above), then re-attempts getUserMedia.
-      if (err instanceof Error) {
-        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-          setError('Mic ki permission chahiye. Browser ke address bar mein mic icon click karo aur "Allow" karo.');
-        } else if (err.name === 'NotFoundError') {
-          setError('Microphone nahi mila. Check karo ki mic connected hai.');
-        } else {
-          setError('Mic access mein problem hui. Browser settings check karo.');
-        }
+      
+      if (err instanceof Error && err.message.includes('already started')) {
+        // Recognition is already running, just update state
+        setIsRecording(true);
       } else {
-        setError('Mic access mein problem hui. Browser settings check karo.');
+        setError('Speech recognition start nahi ho paya. Dobara try karo.');
       }
     }
-  }, [setIsRecording, generateCodeFromAudio, onCodeGenerated]);
+  }, [setIsRecording, setTranscript]);
 
   const stopRecording = useCallback(() => {
-    // FIX: Always guard against null/inactive recorder.
-    // Old code: `if (mediaRecorder && mediaRecorder.state !== 'inactive')`
-    // where mediaRecorder was useState — reset to null on remount, causing
-    // stopRecording() to silently no-op and isRecording to stay true forever.
-    // New code: ref is always current, even across remounts.
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-      // Note: setIsRecording(false) is called inside recorder.onstop,
-      // not here, to avoid a double-update race condition.
+    if (recognitionRef.current) {
+      try {
+        console.log('[VoicePanel] Stopping speech recognition...');
+        recognitionRef.current.stop();
+      } catch (err) {
+        console.error('[VoicePanel] Error stopping recognition:', err);
+        setIsRecording(false);
+      }
     } else {
-      // Recorder is gone (e.g. stale state) — force-reset the store flag
-      // so the UI doesn't stay locked in recording mode.
       setIsRecording(false);
     }
   }, [setIsRecording]);
@@ -594,7 +604,7 @@ export function VoicePanel({ onCodeGenerated }: { onCodeGenerated?: (code: strin
                 style={{ background: 'linear-gradient(to bottom, rgba(34,211,238,0.6), rgba(167,139,250,0.4))' }}
               />
               <textarea
-                value={transcript}
+                value={transcript + (interimTranscript ? ' ' + interimTranscript : '')}
                 onChange={(e) => setTranscript(e.target.value)}
                 className="w-full bg-transparent resize-none focus:outline-none pl-5 pr-4 py-3.5 text-sm leading-relaxed"
                 style={{
@@ -604,7 +614,21 @@ export function VoicePanel({ onCodeGenerated }: { onCodeGenerated?: (code: strin
                 }}
                 rows={3}
                 placeholder="Recording ke baad yahan type karo kya bolna tha..."
+                disabled={isRecording}
               />
+              {/* Live transcription indicator */}
+              {interimTranscript && (
+                <div
+                  className="absolute bottom-2 right-2 px-2 py-1 rounded text-xs"
+                  style={{
+                    background: 'rgba(34,211,238,0.15)',
+                    color: 'rgba(34,211,238,0.9)',
+                    border: '1px solid rgba(34,211,238,0.3)',
+                  }}
+                >
+                  🎤 Sun raha hun...
+                </div>
+              )}
             </div>
 
             {/* Generate Button */}
