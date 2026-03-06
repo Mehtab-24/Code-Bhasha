@@ -2,12 +2,25 @@ import { NextResponse } from 'next/server';
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import { z } from 'zod';
 
+// Validate environment variables at module load time
+const AWS_REGION = process.env.BEDROCK_AWS_REGION || process.env.AWS_REGION || "us-east-1";
+const AWS_ACCESS_KEY_ID = process.env.BEDROCK_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
+const AWS_SECRET_ACCESS_KEY = process.env.BEDROCK_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+
+// Log environment variable status (without exposing secrets)
+console.log('[Voice-to-Code] Environment check:', {
+  region: AWS_REGION,
+  hasAccessKey: !!AWS_ACCESS_KEY_ID,
+  hasSecretKey: !!AWS_SECRET_ACCESS_KEY,
+  accessKeyPrefix: AWS_ACCESS_KEY_ID?.substring(0, 8) + '...',
+});
+
 // Initialize Bedrock Client for code generation
 const bedrockClient = new BedrockRuntimeClient({
-  region: process.env.AWS_REGION || "us-east-1",
+  region: AWS_REGION,
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+    accessKeyId: AWS_ACCESS_KEY_ID!,
+    secretAccessKey: AWS_SECRET_ACCESS_KEY!,
   }
 });
 
@@ -65,7 +78,13 @@ Return ONLY a valid JSON object:
     });
 
     console.log('[Voice-to-Code] Calling Amazon Nova Micro...');
+    console.log('[Voice-to-Code] Model ID: amazon.nova-micro-v1:0');
+    console.log('[Voice-to-Code] Region:', AWS_REGION);
+    
     const response = await bedrockClient.send(command);
+    
+    console.log('[Voice-to-Code] ✅ Received response from Nova');
+    
     const responseBody = JSON.parse(new TextDecoder().decode(response.body));
     
     console.log('[Voice-to-Code] Nova response:', JSON.stringify(responseBody, null, 2));
@@ -75,12 +94,17 @@ Return ONLY a valid JSON object:
     const outputText = responseBody.output?.message?.content?.[0]?.text || '';
     
     if (!outputText) {
+      console.error('[Voice-to-Code] ❌ No output text from Nova');
+      console.error('[Voice-to-Code] Response structure:', JSON.stringify(responseBody, null, 2));
       throw new Error('No output from Nova Micro');
     }
+
+    console.log('[Voice-to-Code] Extracted output text:', outputText.substring(0, 200) + '...');
 
     // Parse the JSON response from Nova
     const jsonMatch = outputText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
+      console.warn('[Voice-to-Code] ⚠️ Nova did not return JSON, using raw output');
       // If Nova didn't return JSON, wrap the response
       return {
         code: outputText,
@@ -90,19 +114,45 @@ Return ONLY a valid JSON object:
 
     const result = JSON.parse(jsonMatch[0]);
     
+    console.log('[Voice-to-Code] ✅ Successfully parsed JSON response');
+    
     return {
       code: result.code || outputText,
       explanation: result.explanation || 'Code generated successfully'
     };
 
   } catch (error) {
-    console.error('[Voice-to-Code] Code generation error:', error);
-    throw new Error('Code generation failed');
+    console.error('🚨 CODE GENERATION ERROR 🚨');
+    console.error('Error type:', error instanceof Error ? error.constructor.name : typeof error);
+    console.error('Error message:', error instanceof Error ? error.message : String(error));
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    console.error('Full error:', error);
+    
+    throw new Error(`Code generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
 export async function POST(req: Request) {
   try {
+    // CRITICAL: Validate environment variables first
+    if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY) {
+      console.error("❌ CRITICAL: Missing Bedrock Environment Variables!");
+      console.error("Expected: BEDROCK_AWS_ACCESS_KEY_ID and BEDROCK_AWS_SECRET_ACCESS_KEY");
+      console.error("Or fallback: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY");
+      console.error("Current env keys:", Object.keys(process.env).filter(k => k.includes('AWS') || k.includes('BEDROCK')));
+      
+      return NextResponse.json(
+        { 
+          error: "Server misconfiguration: Missing Bedrock credentials",
+          message: "Server configuration mein problem hai. Admin ko batao.",
+          details: "AWS credentials not found in environment variables"
+        },
+        { status: 500 }
+      );
+    }
+
+    console.log('[Voice-to-Code] ✅ Environment variables validated');
+
     const body = await req.json();
     
     // Validate input
@@ -139,7 +189,11 @@ export async function POST(req: Request) {
     });
 
   } catch (err) {
-    console.error('[Voice-to-Code] API Error:', err);
+    console.error('🚨 BEDROCK API ERROR DETAILS 🚨');
+    console.error('Error type:', err instanceof Error ? err.constructor.name : typeof err);
+    console.error('Error message:', err instanceof Error ? err.message : String(err));
+    console.error('Error stack:', err instanceof Error ? err.stack : 'No stack trace');
+    console.error('Full error object:', err);
     
     if (err instanceof z.ZodError) {
       return NextResponse.json(
