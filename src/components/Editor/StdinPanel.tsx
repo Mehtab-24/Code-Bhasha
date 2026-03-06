@@ -2,9 +2,25 @@
 
 import { Terminal } from 'lucide-react';
 import { useExecutionStore } from '@/store/useExecutionStore';
+import { useMemo } from 'react';
 
 export function StdinPanel() {
-  const { stdinContent, setStdinContent } = useExecutionStore();
+  // Subscribe to store state properly
+  const { stdinContent, setStdinContent, files, activeFileId } = useExecutionStore();
+  
+  // Get active file from subscribed state
+  const activeFile = useMemo(() => {
+    return files.find(f => f.id === activeFileId);
+  }, [files, activeFileId]);
+  
+  // Count input() calls
+  const inputCount = useMemo(() => {
+    if (!activeFile || !activeFile.content) return 0;
+    const matches = activeFile.content.match(/input\(/g);
+    return matches ? matches.length : 0;
+  }, [activeFile]);
+
+  const hasInputCalls = inputCount > 0;
 
   return (
     <div
@@ -14,6 +30,7 @@ export function StdinPanel() {
         border: '1px solid rgba(255,255,255,0.07)',
         backdropFilter: 'blur(12px)',
         boxShadow: '0 4px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03)',
+        transition: 'opacity 0.3s',
       }}
     >
       {/* Header */}
@@ -32,15 +49,19 @@ export function StdinPanel() {
           className="text-xs ml-auto"
           style={{ color: 'rgba(255,255,255,0.15)' }}
         >
-          Enter one input per line
+          {!hasInputCalls ? 'Optional' : `${inputCount} input${inputCount !== 1 ? 's' : ''} needed`}
         </span>
       </div>
 
-      {/* Textarea */}
+      {/* Textarea - ALWAYS EDITABLE */}
       <textarea
         value={stdinContent}
         onChange={(e) => setStdinContent(e.target.value)}
-        placeholder="Enter inputs here (one per line)..."
+        placeholder={
+          hasInputCalls
+            ? `Enter ${inputCount} input${inputCount !== 1 ? 's' : ''} here (one per line)...`
+            : "Enter inputs here (optional, one per line)..."
+        }
         className="w-full px-4 py-3 bg-transparent resize-none font-mono text-sm focus:outline-none"
         style={{
           color: 'rgba(255,255,255,0.7)',

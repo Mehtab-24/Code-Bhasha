@@ -225,7 +225,8 @@ export function AppShell() {
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
 
   const {
-    getActiveFile,
+    files,
+    activeFileId,
     updateFileContent,
     isExecuting,
     output,
@@ -239,7 +240,8 @@ export function AppShell() {
     setWorkerReady,
   } = useExecutionStore();
 
-  const activeFile = getActiveFile();
+  // Compute active file from subscribed state
+  const activeFile = files.find(f => f.id === activeFileId);
 
   // FIX: Replace the old polling + 30s timeout approach with a direct
   // event subscription. The execution service calls our listener the
@@ -496,11 +498,6 @@ export function AppShell() {
           />
         </motion.div>
 
-        {/* ── Standard Input Panel ──────────────────────── */}
-        <motion.div variants={itemVariants}>
-          <StdinPanel />
-        </motion.div>
-
         {/* ── Action Bar ────────────────────────────────── */}
         <motion.div
           variants={itemVariants}
@@ -529,6 +526,11 @@ export function AppShell() {
             <Trash2 className="w-4 h-4" />
             <span className="hidden sm:inline">Clear</span>
           </motion.button>
+        </motion.div>
+
+        {/* ── Standard Input Panel ──────────────────────── */}
+        <motion.div variants={itemVariants}>
+          <StdinPanel />
         </motion.div>
 
         {/* ── Output Panel ──────────────────────────────── */}

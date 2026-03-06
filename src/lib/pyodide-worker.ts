@@ -137,8 +137,19 @@ async function executePythonCode(code: string, executionId: string, stdinContent
     pyodide.setStdin({
       stdin: () => {
         const value = inputs.shift();
-        // Return the value or empty string if queue is exhausted
-        return value !== undefined ? value : '';
+        const result = value !== undefined ? value : '';
+        
+        // FIX: Echo the consumed input to stdout (mimics terminal behavior)
+        // This makes the output look like a real terminal where you see what you typed
+        if (result) {
+          self.postMessage({
+            type: 'STDOUT',
+            line: result,
+            id: currentExecutionId,
+          } as OutputMessage);
+        }
+        
+        return result;
       }
     });
 

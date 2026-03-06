@@ -9,7 +9,7 @@ import { useExecutionStore } from '@/store/useExecutionStore';
 const EXAMPLE_PROMPTS = [
   "1 se 10 tak odd numbers print karo",
   "List ko reverse karne ka function banao",
-  "Factorial nikalne ka code likho",
+  "Factorial of number user se input lekar",
   "Fibonacci series ka code likho"
 ];
 
@@ -306,9 +306,29 @@ export function VoicePanel({ onCodeGenerated }: { onCodeGenerated?: (code: strin
               console.log('[VoicePanel] Generating code from transcript:', finalTranscript);
               const result = await generateCodeFromVoice(finalTranscript);
               
-              if (result && result.code && onCodeGenerated) {
+              if (result && result.code) {
                 console.log('[VoicePanel] Code generated, injecting into editor');
-                onCodeGenerated(result.code);
+                
+                // FIX: Use getState() to get fresh state directly
+                // Add fallback for different property names
+                const resultWithFallback = result as { code?: string; generatedCode?: string; pythonCode?: string };
+                const finalCode = result.code || resultWithFallback.generatedCode || resultWithFallback.pythonCode || '';
+                
+                const store = useExecutionStore.getState();
+                if (store.activeFileId && finalCode) {
+                  console.log('[VoicePanel] Injecting code into file:', store.activeFileId);
+                  store.updateFileContent(store.activeFileId, finalCode);
+                } else {
+                  console.warn('[VoicePanel] Cannot inject code:', { 
+                    hasActiveFileId: !!store.activeFileId, 
+                    hasCode: !!finalCode 
+                  });
+                }
+                
+                // Also call callback if provided (for backward compatibility)
+                if (onCodeGenerated && finalCode) {
+                  onCodeGenerated(finalCode);
+                }
               }
             } catch (err) {
               console.error('[VoicePanel] Failed to generate code:', err);
@@ -449,8 +469,27 @@ export function VoicePanel({ onCodeGenerated }: { onCodeGenerated?: (code: strin
       setError('');
       const result = await generateCodeFromVoice(transcript);
       
-      if (result && 'code' in result && result.code && onCodeGenerated) {
-        onCodeGenerated(result.code);
+      if (result && 'code' in result && result.code) {
+        // FIX: Use getState() to get fresh state directly
+        // Add fallback for different property names
+        const resultWithFallback = result as { code?: string; generatedCode?: string; pythonCode?: string };
+        const finalCode = result.code || resultWithFallback.generatedCode || resultWithFallback.pythonCode || '';
+        
+        const store = useExecutionStore.getState();
+        if (store.activeFileId && finalCode) {
+          console.log('[VoicePanel] Injecting code into file:', store.activeFileId);
+          store.updateFileContent(store.activeFileId, finalCode);
+        } else {
+          console.warn('[VoicePanel] Cannot inject code:', { 
+            hasActiveFileId: !!store.activeFileId, 
+            hasCode: !!finalCode 
+          });
+        }
+        
+        // Also call callback if provided (for backward compatibility)
+        if (onCodeGenerated && finalCode) {
+          onCodeGenerated(finalCode);
+        }
       }
     } catch (err) {
       console.error('[VoicePanel] Code generation error:', err);
