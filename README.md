@@ -1,149 +1,147 @@
-# CodeBhasha - Premium Dark Mode Developer Dashboard
+# CodeBhasha
 
 **Tagline:** *Syntax is a barrier; Logic is universal.*
 
-A mobile-first, web-based coding environment that removes the English-syntax barrier for Indian students. Built with Next.js 14, TypeScript, Tailwind CSS, and Framer Motion.
+A **mobile-first**, neon-dark, glassy little Python playground built for folks who *think in Hinglish*.
 
-## 🚀 Features Implemented
+Write code. Run it **instantly in the browser** (Pyodide + Web Worker).  
+Break code. Get roasted (politely) by the **Desi Debugger** (AWS Bedrock) in friendly Hinglish.
 
-### ✅ Premium Dark Mode UI
-- **Glassmorphism Design**: Semi-transparent panels with backdrop blur effects
-- **Neon Accent Colors**: Cyan, violet, pink, and green glow effects
-- **Mobile-First Layout**: Optimized for 360px width, scales elegantly to desktop
-- **Smooth Animations**: Framer Motion micro-interactions throughout
+---
 
-### ✅ App Shell Architecture
-- **Header**: Logo, theme toggle, help button with glassmorphism styling
-- **Mode Tabs**: Voice ("🎤 Bolo") and Text ("✏ Likho") input modes
-- **Voice Panel**: Microphone button with pulsing glow animation
-- **Code Editor**: Monaco Editor with Python syntax highlighting
-- **Action Bar**: Run and Clear buttons with hover animations
-- **Output Panel**: Tabbed interface for Output and Debugger
+## Why CodeBhasha?
 
-### ✅ Client-Side Python Execution (Phase 2)
-- **Pyodide Integration**: WebAssembly Python runtime in Web Worker
-- **Real-time Output**: Live stdout/stderr capture and display
-- **Error Handling**: Comprehensive Python error capture with line numbers
-- **Timeout Protection**: 10-second hard timeout prevents infinite loops
-- **Performance Monitoring**: Execution time tracking and display
-- **Worker Management**: Automatic worker respawning and cleanup
+Because the first `SyntaxError` shouldn’t feel like a career-ending event.
 
-### ✅ Desi Debugger - AWS Bedrock Integration (Phase 3)
-- **Hinglish Error Explanations**: Friendly, conversational error messages in Hindi/English mix
-- **AWS Bedrock**: Claude 3.5 Sonnet for intelligent error analysis
-- **Automatic Debugging**: Triggers on every Python error
-- **Fix Suggestions**: Actionable instructions on how to fix errors
-- **Corrected Code**: Shows the fixed version of problematic lines
-- **Smart UI**: Auto-switches to Debugger tab when errors occur
-- **Loading States**: Smooth animations while fetching explanations
+CodeBhasha helps beginners move from *“logic samajh aata hai but syntax…”* to *“haan bhai, ho gaya.”*
 
-### ✅ Interactive Components
-- **Animated Microphone**: Pulsing glow effect when recording
-- **Glassmorphism Panels**: Backdrop blur with subtle borders
-- **Smooth Transitions**: Slide-in animations for panels
-- **Mobile Touch Optimized**: Touch-friendly interactions
-- **Execution States**: Loading indicators and status feedback
+**What’s inside:**
+- ⚡ **Instant Python execution** in-browser using **Pyodide (WASM)** inside a **Web Worker**
+- 🧠 **Desi Debugger**: converts scary tracebacks into **simple Hinglish explanations**
+- ✨ UI that tries to feel premium: **glassmorphism + neon accents**
+- 🧰 **Monaco Editor** with a multi-file tab vibe (create / rename / delete)
 
-## 🛠 Tech Stack
+> Note: `design.md` + `requirements.md` describe a bigger AWS setup (API Gateway + Lambda for voice/transcribe/generate flows).  
+> This repo currently includes **`/api/debug`** and the **frontend voice UI**, but some backend routes described there may not exist yet in this codebase.
 
-- **Framework**: Next.js 14 (App Router)
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS with custom dark theme
-- **Animations**: Framer Motion
-- **Editor**: Monaco Editor
-- **Python Runtime**: Pyodide (WebAssembly)
-- **State**: Zustand for execution state management
-- **Icons**: Lucide React
-- **AI/ML**: AWS Bedrock (Claude 3.5 Sonnet)
-- **Validation**: Zod for API input validation
+---
 
-## 🎨 Design System
+## What you can do (aka the fun part)
 
-### Color Palette
-- **Dark Base**: `#0a0a0a` to `#a3a3a3`
-- **Neon Accents**: 
-  - Cyan: `#00ffff`
-  - Violet: `#8b5cf6`
-  - Pink: `#ec4899`
-  - Green: `#10b981`
-- **Glassmorphism**: `rgba(26, 26, 26, 0.8)` with blur effects
+### 1) ✏️ Likho → ▶️ Chalao (Write & Run Python)
+- Type Python in the Monaco editor
+- Smash **▶ Chalao**
+- Watch output stream into the terminal panel (**stdout/stderr**)
+- Infinite loop? Don’t worry—**10s timeout** kills the worker and respawns it.
 
-### Animations
-- **Pulse Glow**: 2s infinite pulse for microphone
-- **Slide Transitions**: 0.3s ease-out for panels
-- **Scale Effects**: Hover and tap animations on buttons
+### 2) 💥 Error aaya? Desi Debugger sambhalega
+When Python throws hands, CodeBhasha:
+1. Captures `{ type, message, lineno, line_text }` from the Pyodide worker
+2. Calls `POST /api/debug`
+3. Shows:
+   - 💬 Friendly Hinglish explanation
+   - 🔧 Clear fix suggestion
+   - ✨ Corrected line (when available)
 
-## 🚀 Getting Started
+And yes, the UI auto-switches to the **Debugger** tab so you don’t have to hunt.
+
+---
+
+## Tech Stack (the ingredients)
+
+- **Framework:** Next.js (App Router)
+- **Language:** TypeScript
+- **UI:** Tailwind CSS + Framer Motion
+- **Editor:** Monaco (`@monaco-editor/react`)
+- **State:** Zustand
+- **Python runtime:** Pyodide (WASM) in a Web Worker
+- **AI Debugging:** AWS Bedrock (`@aws-sdk/client-bedrock-runtime`)
+- **Validation:** Zod
+- **Icons:** lucide-react
+
+---
+
+## Project Structure (high-level map)
+
+```txt
+src/
+  app/
+    api/
+      debug/route.ts      # Bedrock-powered Hinglish error explanations
+    layout.tsx
+    page.tsx
+    globals.css
+  components/
+    AppShell.tsx          # Main UI: tabs, run/clear, output/debugger, etc.
+    Header.tsx
+    TutorialModal.tsx
+    Editor/
+      CodeEditor.tsx
+      OutputPanel.tsx
+      DownloadModal.tsx
+      StdinPanel.tsx
+    Voice/
+      VoicePanel.tsx
+  lib/
+    execution-service.ts  # Worker lifecycle, queue, READY event
+    pyodide-worker.ts     # (Reference worker) Execution + error parsing
+  store/
+    useExecutionStore.ts  # Zustand state + actions (run, debug fetch, voice state)
+  middleware.ts           # CSP + security headers (Pyodide/CDN + Worker support)
+```
+
+---
+
+## Getting Started (local)
 
 ### Prerequisites
-- Node.js 20+ installed
-- AWS account with Bedrock access (for Phase 3 Desi Debugger)
-- AWS credentials with `bedrock:InvokeModel` permission
+- **Node.js 20+**
+- npm
 
-### Environment Setup
-
-1. Copy the example environment file:
+### Install
 ```bash
-cp .env.local.example .env.local
-```
-
-2. Fill in your AWS credentials in `.env.local`:
-```env
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your_access_key_here
-AWS_SECRET_ACCESS_KEY=your_secret_key_here
-```
-
-### Installation & Development
-
-```bash
-# Install dependencies
 npm install
-
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to view the application.
+### Run dev server
+```bash
+npm run dev
+```
 
-## 📱 Mobile-First Design
+Open:
+- `http://localhost:3000`
 
-The interface is optimized for mobile devices starting at 360px width:
+### Production build
+```bash
+npm run build
+npm run start
+```
 
-- **Touch-friendly buttons**: Large tap targets
-- **Responsive layout**: Adapts from mobile to desktop
-- **Gesture support**: Pinch-to-zoom in editor
-- **Optimized scrolling**: Custom scrollbars and smooth scrolling
+---
 
-## 🎯 Next Steps
+## Environment Variables (for Desi Debugger)
 
-Phase 3 is now complete! The Desi Debugger provides friendly Hinglish error explanations. Ready for Phase 4:
+`src/app/api/debug/route.ts` needs AWS credentials available at runtime.
 
-1. ~~**Desi Debugger**: AWS Lambda + Bedrock for Hinglish error explanations~~ ✅
-2. **Voice-to-Code**: Web Audio API + AWS Transcribe integration
-3. **Code Generation**: AWS Bedrock for Hinglish → Python conversion
-4. **Auto-complete**: Intent-based suggestions via Bedrock
-5. **Authentication**: JWT session management
+Set these locally (examples shown; **never commit real keys**):
 
-## 📄 Architecture
+```bash
+export AWS_REGION="us-east-1"
+export AWS_ACCESS_KEY_ID="..."
+export AWS_SECRET_ACCESS_KEY="..."
+```
 
-Built following the design specifications in `design.md` and requirements in `requirements.md`. The app now includes:
+> Heads up: there’s currently **no `.env.local.example`** in the repo, so create your own `.env.local` if you prefer env files over shell exports.
 
-- **Phase 1**: Premium dark mode UI with glassmorphism design ✅
-- **Phase 2**: Client-side Python execution with Pyodide ✅
-- **Phase 3**: Desi Debugger with AWS Bedrock ✅
-- **Phase 4**: Voice-to-Code (Next)
-- **Phase 5**: Code Generation (Planned)
+---
 
-## 🔧 API Routes
+## API
 
-### POST /api/debug
-Analyzes Python errors and returns friendly Hinglish explanations.
+### `POST /api/debug`
 
-**Request:**
+**Purpose:** Turn Python errors into Hinglish explanations (+ optional corrected line).
+
+**Request**
 ```json
 {
   "code": "print('hello'",
@@ -156,15 +154,71 @@ Analyzes Python errors and returns friendly Hinglish explanations.
 }
 ```
 
-**Response:**
+**Response**
 ```json
 {
-  "friendly_message": "Bhai, line 1 pe 'print' ke baad bracket band karna bhool gaye — ')' lagao",
-  "fix_suggestion": "Line 1 pe jaake 'print' statement ke end mein ')' add karo",
+  "friendly_message": "Bhai, ...",
+  "fix_suggestion": "Line 1 pe ...",
   "corrected_line": "print('hello')"
 }
 ```
 
 ---
 
-**Status**: ✅ Phase 3 Complete - Desi Debugger ready! Next: Voice-to-Code
+## How execution works (Pyodide Worker)
+
+Execution is managed by `src/lib/execution-service.ts`:
+
+- Loads Pyodide from jsDelivr (`pyodide.js` + WASM assets)
+- Streams stdout/stderr into the UI
+- Supports stdin (see `StdinPanel` + worker plumbing)
+- **10s hard timeout** protects the UI from hanging
+- Worker sends a **READY** event so the Run button can enable cleanly
+
+---
+
+## Security notes (CSP)
+
+`src/middleware.ts` sets a CSP that’s Pyodide-friendly:
+- allows loading assets from jsDelivr
+- allows workers (`worker-src blob: data:`)
+- includes `unsafe-eval` (needed for Pyodide/WASM compilation)
+
+---
+
+## Testing (manual but solid)
+
+- `TESTING_GUIDE.md` — end-to-end UX checklist (worker init, mic permission flow, scrolling, full integration test)
+- `TEST_EXAMPLES.md` — copy/paste “break-it” snippets for Desi Debugger verification
+
+Quick sanity run:
+1. `npm run dev`
+2. Run button: “Initializing…” → “▶ Chalao”
+3. Run a loop, confirm output
+4. Paste a SyntaxError and confirm Debugger response
+
+---
+
+## Roadmap (from docs)
+
+Planned / documented ideas:
+- Voice-to-code transcription + code generation
+- Intent-based suggestions/autocomplete
+- Auth/session token flows
+- More robust AWS deployment story
+
+Docs:
+- `design.md` (last updated **2026-02-26**)
+- `requirements.md` (last updated **2026-02-26**)
+
+---
+
+## Contributing
+
+If you want to help:
+- keep things **mobile-first** (360px baseline)
+- don’t block the main thread (workers ftw)
+- don’t leak secrets (ever)
+
+---
+
