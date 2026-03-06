@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import type { Monaco } from '@monaco-editor/react';
 import type * as monacoEditor from 'monaco-editor';
+import { useExecutionStore } from '@/store/useExecutionStore';
+import { Plus, X } from 'lucide-react';
 
 interface CodeEditorProps {
   value: string;
@@ -93,25 +95,111 @@ function WindowDot({
   );
 }
 
-function FileTab({ active }: { active: boolean }) {
+function FileTab({ 
+  id,
+  name, 
+  active,
+  canClose,
+  onClick,
+  onClose,
+  onRename
+}: { 
+  id: string;
+  name: string;
+  active: boolean;
+  canClose: boolean;
+  onClick: () => void;
+  onClose: () => void;
+  onRename: (newName: string) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  const handleDoubleClick = () => {
+    if (active) {
+      setIsEditing(true);
+      setEditValue(name);
+    }
+  };
+
+  const handleRenameSubmit = () => {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== name) {
+      onRename(trimmed);
+    }
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleRenameSubmit();
+    } else if (e.key === 'Escape') {
+      setIsEditing(false);
+      setEditValue(name);
+    }
+  };
+
   return (
     <div
-      className="flex items-center gap-2 px-4 h-full relative"
+      className="flex items-center gap-2 px-3 h-full relative group cursor-pointer shrink-0"
       style={{
         borderRight: '1px solid rgba(255,255,255,0.06)',
         background: active ? 'rgba(255,255,255,0.04)' : 'transparent',
       }}
+      onClick={onClick}
+      onDoubleClick={handleDoubleClick}
     >
       <div className="flex items-center gap-1">
         <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#3b82f6', boxShadow: '0 0 4px rgba(59,130,246,0.6)' }} />
         <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#facc15', boxShadow: '0 0 4px rgba(250,204,21,0.5)' }} />
       </div>
-      <span
-        className="text-xs font-mono select-none"
-        style={{ color: active ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.28)' }}
-      >
-        main.py
-      </span>
+      
+      {isEditing ? (
+        <input
+          ref={inputRef}
+          type="text"
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={handleRenameSubmit}
+          onKeyDown={handleKeyDown}
+          className="text-xs font-mono bg-transparent border-none outline-none"
+          style={{ 
+            color: 'rgba(255,255,255,0.65)',
+            width: '100px'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <span
+          className="text-xs font-mono select-none"
+          style={{ color: active ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.28)' }}
+        >
+          {name}
+        </span>
+      )}
+
+      {canClose && (
+        <motion.button
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10"
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+        >
+          <X className="w-3 h-3" style={{ color: 'rgba(255,255,255,0.4)' }} />
+        </motion.button>
+      )}
+
       {active && (
         <motion.div
           className="absolute bottom-0 left-0 right-0 h-px"
@@ -173,6 +261,16 @@ function CharCounter({ value }: { value: string }) {
 export function CodeEditor({ value, onChange }: CodeEditorProps) {
   const [isEditorMounted, setIsEditorMounted] = useState(false);
   const editorRef = useRef<monacoEditor.editor.IStandaloneCodeEditor | null>(null);
+
+  // Get file management from store
+  const { 
+    files, 
+    activeFileId, 
+    setActiveFile, 
+    createFile, 
+    deleteFile, 
+    renameFile 
+  } = useExecutionStore();
 
   useMonacoTextareaFix();
 
@@ -314,8 +412,41 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
         className="shrink-0 flex items-stretch h-9"
         style={{ background: 'rgba(0,0,0,0.35)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
       >
-        <FileTab active />
-        <div className="flex-1" />
+        {/* Scrollable tabs container */}
+        <div 
+          className="flex items-stretch overflow-x-auto scroll-smooth flex-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+        >
+          {files.map((file) => (
+            <FileTab
+              key={file.id}
+              id={file.id}
+              name={file.name}
+              active={file.id === activeFileId}
+              canClose={files.length > 1}
+              onClick={() => setActiveFile(file.id)}
+              onClose={() => deleteFile(file.id)}
+              onRename={(newName) => renameFile(file.id, newName)}
+            />
+          ))}
+        </div>
+        
+        {/* New file button - pinned to right */}
+        <motion.button
+          onClick={() => createFile()}
+          className="flex items-center justify-center px-3 border-l shrink-0"
+          style={{
+            borderColor: 'rgba(255,255,255,0.06)',
+            color: 'rgba(255,255,255,0.3)',
+          }}
+          whileHover={{ 
+            background: 'rgba(255,255,255,0.04)',
+            color: 'rgba(255,255,255,0.6)'
+          }}
+          whileTap={{ scale: 0.95 }}
+          title="New file"
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </motion.button>
       </div>
 
       {/* ── Monaco mount zone ─────────────────────────────────────────────

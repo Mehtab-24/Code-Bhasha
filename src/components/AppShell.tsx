@@ -7,6 +7,8 @@ import { Header } from './Header';
 import { VoicePanel } from './Voice/VoicePanel';
 import { CodeEditor } from './Editor/CodeEditor';
 import { OutputPanel } from './Editor/OutputPanel';
+import { DownloadModal } from './Editor/DownloadModal';
+import { StdinPanel } from './Editor/StdinPanel';
 import { useExecutionStore } from '@/store/useExecutionStore';
 import { getExecutionService } from '@/lib/execution-service';
 
@@ -219,10 +221,12 @@ function WorkerStatusDot({ isReady }: { isReady: boolean }) {
 // ─── Main AppShell ─────────────────────────────────────────────────────────────
 export function AppShell() {
   const [activeMode, setActiveMode] = useState<'voice' | 'text'>('voice');
-  const [code, setCode] = useState('# Yahan apna Python code likho\nprint("Hello CodeBhasha!")');
   const [isCopied, setIsCopied] = useState(false);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
 
   const {
+    getActiveFile,
+    updateFileContent,
     isExecuting,
     output,
     error,
@@ -234,6 +238,8 @@ export function AppShell() {
     clearOutput,
     setWorkerReady,
   } = useExecutionStore();
+
+  const activeFile = getActiveFile();
 
   // FIX: Replace the old polling + 30s timeout approach with a direct
   // event subscription. The execution service calls our listener the
@@ -263,18 +269,20 @@ export function AppShell() {
   }, [setWorkerReady]);
 
   const handleRunCode = () => {
-    if (!code.trim()) return;
-    executeCode(code);
+    if (!activeFile || !activeFile.content.trim()) return;
+    executeCode(activeFile.content);
   };
 
   const handleClearCode = () => {
-    setCode('# Yahan apna Python code likho\n');
+    if (!activeFile) return;
+    updateFileContent(activeFile.id, '# Yahan apna Python code likho\n');
     clearOutput();
   };
 
   const handleCopyCode = async () => {
+    if (!activeFile) return;
     try {
-      await navigator.clipboard.writeText(code);
+      await navigator.clipboard.writeText(activeFile.content);
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     } catch (err) {
@@ -283,15 +291,7 @@ export function AppShell() {
   };
 
   const handleDownloadCode = () => {
-    const blob = new Blob([code], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'main.py';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setIsDownloadModalOpen(true);
   };
 
   const displayOutput = output.map((line) => line.text);
@@ -394,7 +394,11 @@ export function AppShell() {
               exit={{ opacity: 0, y: -8, scale: 0.99 }}
               transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
             >
-              <VoicePanel onCodeGenerated={(generatedCode) => setCode(generatedCode)} />
+              <VoicePanel onCodeGenerated={(generatedCode) => {
+                if (activeFile) {
+                  updateFileContent(activeFile.id, generatedCode);
+                }
+              }} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -428,7 +432,7 @@ export function AppShell() {
               className="text-xs font-mono tracking-widest uppercase"
               style={{ color: 'rgba(255,255,255,0.18)', letterSpacing: '0.12em' }}
             >
-              main.py
+              {activeFile?.name || 'main.py'}
             </span>
 
             {/* Right: utility buttons + status */}
@@ -482,7 +486,19 @@ export function AppShell() {
             </div>
           </div>
 
-          <CodeEditor value={code} onChange={setCode} />
+          <CodeEditor 
+            value={activeFile?.content || ''} 
+            onChange={(newContent) => {
+              if (activeFile) {
+                updateFileContent(activeFile.id, newContent);
+              }
+            }} 
+          />
+        </motion.div>
+
+        {/* ── Standard Input Panel ──────────────────────── */}
+        <motion.div variants={itemVariants}>
+          <StdinPanel />
         </motion.div>
 
         {/* ── Action Bar ────────────────────────────────── */}
@@ -572,6 +588,12 @@ export function AppShell() {
           />
         </motion.div>
       </motion.main>
+
+      {/* Download Modal */}
+      <DownloadModal 
+        isOpen={isDownloadModalOpen} 
+        onClose={() => setIsDownloadModalOpen(false)} 
+      />
     </div>
   );
 }

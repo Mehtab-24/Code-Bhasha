@@ -57,6 +57,7 @@ class ExecutionService {
   } | null = null;
   private executionQueue: Array<{
     code: string;
+    stdin: string;
     callback: ExecutionCallback;
   }> = [];
 
@@ -158,7 +159,7 @@ class ExecutionService {
           }
         }
 
-        async function executePythonCode(code, executionId) {
+        async function executePythonCode(code, executionId, stdinContent) {
           if (!pyodide || !isInitialized) {
             self.postMessage({
               type: 'ERROR',
@@ -183,6 +184,15 @@ class ExecutionService {
           try {
             // Point stream output at this execution's id
             currentExecutionId = executionId;
+
+            // Set up stdin queue
+            const inputs = stdinContent ? stdinContent.split('\\n') : [];
+            pyodide.setStdin({
+              stdin: () => {
+                const value = inputs.shift();
+                return value !== undefined ? value : '';
+              }
+            });
 
             // Run user code — stdout/stderr already wired via setStdout/setStderr
             await pyodide.runPythonAsync(code);
@@ -233,9 +243,9 @@ class ExecutionService {
         }
 
         self.onmessage = async (event) => {
-          const { type, code, id } = event.data;
+          const { type, code, stdin, id } = event.data;
           if (type === 'EXECUTE') {
-            await executePythonCode(code, id);
+            await executePythonCode(code, id, stdin || '');
           }
         };
 
@@ -368,11 +378,11 @@ class ExecutionService {
     if (!this.isWorkerReady || this.currentExecution || this.executionQueue.length === 0) {
       return;
     }
-    const { code, callback } = this.executionQueue.shift()!;
-    this.executeCode(code, callback);
+    const { code, stdin, callback } = this.executionQueue.shift()!;
+    this.executeCode(code, stdin, callback);
   }
 
-  public executeCode(code: string, callback: ExecutionCallback): string {
+  public executeCode(code: string, stdin: string, callback: ExecutionCallback): string {
     const executionId = `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     const result: ExecutionResult = {
@@ -382,7 +392,7 @@ class ExecutionService {
     };
 
     if (!this.isWorkerReady || this.currentExecution) {
-      this.executionQueue.push({ code, callback });
+      this.executionQueue.push({ code, stdin, callback });
       return executionId;
     }
 
@@ -395,6 +405,7 @@ class ExecutionService {
     this.worker?.postMessage({
       type: 'EXECUTE',
       code,
+      stdin,
       id: executionId,
     });
 

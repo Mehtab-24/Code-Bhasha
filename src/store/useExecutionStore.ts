@@ -29,7 +29,20 @@ export interface VoiceResult {
   explanation: string;
 }
 
+export interface CodeFile {
+  id: string;
+  name: string;
+  content: string;
+}
+
 interface ExecutionState {
+  // File management
+  files: CodeFile[];
+  activeFileId: string;
+  
+  // Standard Input
+  stdinContent: string;
+  
   // Execution state
   isExecuting: boolean;
   currentExecutionId: string | null;
@@ -57,6 +70,17 @@ interface ExecutionState {
   // Worker state
   isWorkerReady: boolean;
   
+  // File actions
+  createFile: (name?: string) => string;
+  deleteFile: (id: string) => void;
+  renameFile: (id: string, newName: string) => void;
+  setActiveFile: (id: string) => void;
+  updateFileContent: (id: string, content: string) => void;
+  getActiveFile: () => CodeFile | undefined;
+  
+  // Standard Input actions
+  setStdinContent: (content: string) => void;
+  
   // Actions
   executeCode: (code: string) => void;
   clearOutput: () => void;
@@ -78,6 +102,19 @@ interface ExecutionState {
 }
 
 export const useExecutionStore = create<ExecutionState>((set, get) => ({
+  // Initial file state
+  files: [
+    {
+      id: 'file_1',
+      name: 'main.py',
+      content: '# Yahan apna Python code likho\nprint("Hello CodeBhasha!")'
+    }
+  ],
+  activeFileId: 'file_1',
+  
+  // Standard Input
+  stdinContent: '',
+  
   // Initial state
   isExecuting: false,
   currentExecutionId: null,
@@ -95,6 +132,84 @@ export const useExecutionStore = create<ExecutionState>((set, get) => ({
   isGeneratingCode: false,
   voiceResult: null,
 
+  // File actions
+  createFile: (name?: string) => {
+    const newId = `file_${Date.now()}`;
+    const fileName = name || `untitled_${get().files.length + 1}.py`;
+    
+    set(state => ({
+      files: [
+        ...state.files,
+        {
+          id: newId,
+          name: fileName.endsWith('.py') ? fileName : `${fileName}.py`,
+          content: '# New Python file\n'
+        }
+      ],
+      activeFileId: newId
+    }));
+    
+    return newId;
+  },
+
+  deleteFile: (id: string) => {
+    const state = get();
+    
+    // Don't delete if it's the only file
+    if (state.files.length === 1) return;
+    
+    const fileIndex = state.files.findIndex(f => f.id === id);
+    if (fileIndex === -1) return;
+    
+    const newFiles = state.files.filter(f => f.id !== id);
+    
+    // If deleting active file, switch to another file
+    let newActiveId = state.activeFileId;
+    if (id === state.activeFileId) {
+      // Switch to previous file, or next if deleting first file
+      const newIndex = fileIndex > 0 ? fileIndex - 1 : 0;
+      newActiveId = newFiles[newIndex].id;
+    }
+    
+    set({
+      files: newFiles,
+      activeFileId: newActiveId
+    });
+  },
+
+  renameFile: (id: string, newName: string) => {
+    // Ensure .py extension
+    const fileName = newName.endsWith('.py') ? newName : `${newName}.py`;
+    
+    set(state => ({
+      files: state.files.map(f =>
+        f.id === id ? { ...f, name: fileName } : f
+      )
+    }));
+  },
+
+  setActiveFile: (id: string) => {
+    set({ activeFileId: id });
+  },
+
+  updateFileContent: (id: string, content: string) => {
+    set(state => ({
+      files: state.files.map(f =>
+        f.id === id ? { ...f, content } : f
+      )
+    }));
+  },
+
+  getActiveFile: () => {
+    const state = get();
+    return state.files.find(f => f.id === state.activeFileId);
+  },
+
+  // Standard Input actions
+  setStdinContent: (content: string) => {
+    set({ stdinContent: content });
+  },
+
   // Actions
   executeCode: (code: string) => {
     const executionService = getExecutionService();
@@ -108,7 +223,7 @@ export const useExecutionStore = create<ExecutionState>((set, get) => ({
       executionTime: null
     });
 
-    const executionId = executionService.executeCode(code, (result: ExecutionResult) => {
+    const executionId = executionService.executeCode(code, get().stdinContent, (result: ExecutionResult) => {
       const state = get();
       
       // Only update if this is the current execution

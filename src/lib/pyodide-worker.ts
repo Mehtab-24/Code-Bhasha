@@ -7,6 +7,7 @@ import { loadPyodide, type PyodideInterface } from 'pyodide';
 interface ExecuteMessage {
   type: 'EXECUTE';
   code: string;
+  stdin: string;
   id: string;
 }
 
@@ -103,7 +104,7 @@ async function initializePyodide() {
 }
 
 // Execute Python code
-async function executePythonCode(code: string, executionId: string) {
+async function executePythonCode(code: string, executionId: string, stdinContent: string) {
   if (!pyodide || !isInitialized) {
     self.postMessage({
       type: 'ERROR',
@@ -130,6 +131,16 @@ async function executePythonCode(code: string, executionId: string) {
     // Track which execution's output we are collecting.
     // setStdout/setStderr callbacks close over this variable.
     currentExecutionId = executionId;
+
+    // Set up stdin queue from the provided content
+    const inputs = stdinContent ? stdinContent.split('\n') : [];
+    pyodide.setStdin({
+      stdin: () => {
+        const value = inputs.shift();
+        // Return the value or empty string if queue is exhausted
+        return value !== undefined ? value : '';
+      }
+    });
 
     // Execute the user's code.
     // stdout/stderr are already redirected via setStdout/setStderr above —
@@ -200,10 +211,10 @@ async function executePythonCode(code: string, executionId: string) {
 
 // Handle messages from main thread
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
-  const { type, code, id } = event.data;
+  const { type, code, stdin, id } = event.data;
 
   if (type === 'EXECUTE') {
-    await executePythonCode(code, id);
+    await executePythonCode(code, id, stdin || '');
   }
 };
 
