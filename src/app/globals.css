@@ -82,6 +82,15 @@ body {
 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
 
+/* Hide scrollbar for example chips */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* ─── FIX 4: Mobile touch — narrow user-select scope ────────────────────────
  *
  * OLD: user-select: none on <body> for all mobile.

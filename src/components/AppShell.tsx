@@ -1,7 +1,7 @@
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, Edit3, Play, Trash2, Zap } from 'lucide-react';
+import { Mic, Edit3, Play, Trash2, Zap, Copy, Download, Check } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Header } from './Header';
 import { VoicePanel } from './Voice/VoicePanel';
@@ -220,6 +220,7 @@ function WorkerStatusDot({ isReady }: { isReady: boolean }) {
 export function AppShell() {
   const [activeMode, setActiveMode] = useState<'voice' | 'text'>('voice');
   const [code, setCode] = useState('# Yahan apna Python code likho\nprint("Hello CodeBhasha!")');
+  const [isCopied, setIsCopied] = useState(false);
 
   const {
     isExecuting,
@@ -269,6 +270,28 @@ export function AppShell() {
   const handleClearCode = () => {
     setCode('# Yahan apna Python code likho\n');
     clearOutput();
+  };
+
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy code:', err);
+    }
+  };
+
+  const handleDownloadCode = () => {
+    const blob = new Blob([code], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'main.py';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const displayOutput = output.map((line) => line.text);
@@ -399,13 +422,64 @@ export function AppShell() {
               <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'rgba(255,189,46,0.5)' }} />
               <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'rgba(39,201,63,0.5)' }} />
             </div>
+
+            {/* Center: filename */}
             <span
               className="text-xs font-mono tracking-widest uppercase"
               style={{ color: 'rgba(255,255,255,0.18)', letterSpacing: '0.12em' }}
             >
               main.py
             </span>
-            <WorkerStatusDot isReady={isWorkerReady} />
+
+            {/* Right: utility buttons + status */}
+            <div className="flex items-center gap-2">
+              {/* Copy button */}
+              <motion.button
+                onClick={handleCopyCode}
+                className="p-1.5 rounded-md transition-colors duration-200"
+                style={{
+                  color: isCopied ? '#00FFA3' : 'rgba(255,255,255,0.3)',
+                }}
+                whileHover={{ 
+                  color: isCopied ? '#00FFA3' : 'rgba(255,255,255,0.7)',
+                  scale: 1.05 
+                }}
+                whileTap={{ scale: 0.95 }}
+                title={isCopied ? 'Copied!' : 'Copy code'}
+              >
+                {isCopied ? (
+                  <Check className="w-3.5 h-3.5" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+              </motion.button>
+
+              {/* Download button */}
+              <motion.button
+                onClick={handleDownloadCode}
+                className="p-1.5 rounded-md transition-colors duration-200"
+                style={{
+                  color: 'rgba(255,255,255,0.3)',
+                }}
+                whileHover={{ 
+                  color: 'rgba(255,255,255,0.7)',
+                  scale: 1.05 
+                }}
+                whileTap={{ scale: 0.95 }}
+                title="Download as main.py"
+              >
+                <Download className="w-3.5 h-3.5" />
+              </motion.button>
+
+              {/* Divider */}
+              <div 
+                className="w-px h-4" 
+                style={{ background: 'rgba(255,255,255,0.1)' }}
+              />
+
+              {/* Worker status */}
+              <WorkerStatusDot isReady={isWorkerReady} />
+            </div>
           </div>
 
           <CodeEditor value={code} onChange={setCode} />

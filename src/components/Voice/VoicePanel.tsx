@@ -5,6 +5,44 @@ import { Mic, MicOff, Sparkles, AlertCircle } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useExecutionStore } from '@/store/useExecutionStore';
 
+// ─── Example prompts for quick testing ────────────────────────────────────────
+const EXAMPLE_PROMPTS = [
+  "1 se 10 tak odd numbers print karo",
+  "List ko reverse karne ka function banao",
+  "Factorial nikalne ka code likho",
+  "Fibonacci series ka code likho"
+];
+
+// ─── ExampleChip: clickable prompt suggestion ─────────────────────────────────
+function ExampleChip({ 
+  text, 
+  onClick 
+}: { 
+  text: string; 
+  onClick: () => void;
+}) {
+  return (
+    <motion.button
+      onClick={onClick}
+      className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200"
+      style={{
+        background: 'rgba(167,139,250,0.08)',
+        border: '1px solid rgba(167,139,250,0.2)',
+        color: 'rgba(167,139,250,0.8)',
+      }}
+      whileHover={{
+        scale: 1.03,
+        background: 'rgba(167,139,250,0.14)',
+        borderColor: 'rgba(167,139,250,0.4)',
+        color: '#a78bfa',
+      }}
+      whileTap={{ scale: 0.97 }}
+    >
+      {text}
+    </motion.button>
+  );
+}
+
 // ─── Ripple Ring: single expanding ring ───────────────────────────────────────
 function RippleRing({
   delay,
@@ -490,6 +528,40 @@ export function VoicePanel({ onCodeGenerated }: { onCodeGenerated?: (code: strin
               : 'Mic button dabao aur apni logic bolo'}
           </motion.p>
         </AnimatePresence>
+
+        {/* ── Judge's Cheat Sheet: Example Prompts ── */}
+        {!isRecording && !transcript && (
+          <motion.div
+            className="w-full space-y-2"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.2 }}
+          >
+            {/* Label */}
+            <div className="flex items-center justify-center gap-1.5">
+              <span
+                className="text-xs font-semibold tracking-wider uppercase"
+                style={{ color: 'rgba(255,255,255,0.2)' }}
+              >
+                Try These
+              </span>
+            </div>
+
+            {/* Chips container with horizontal scroll */}
+            <div className="flex gap-2 overflow-x-auto pb-1 px-1 scrollbar-hide">
+              {EXAMPLE_PROMPTS.map((prompt, index) => (
+                <ExampleChip
+                  key={index}
+                  text={prompt}
+                  onClick={() => {
+                    setTranscript(prompt);
+                    setError('');
+                  }}
+                />
+              ))}
+            </div>
+          </motion.div>
+        )}
       </div>
 
       {/* ── Divider ─────────────────────────────────────────── */}
