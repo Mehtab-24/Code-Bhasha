@@ -1,11 +1,12 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Sun, Moon, HelpCircle } from 'lucide-react';
+import { HelpCircle } from 'lucide-react';
 import { useState } from 'react';
+import { TutorialModal } from './TutorialModal';
 
 export function Header() {
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
 
   return (
     <motion.header 
@@ -34,6 +35,7 @@ export function Header() {
 
           {/* Help */}
           <motion.button
+            onClick={() => setIsTutorialOpen(true)}
             className="p-2 rounded-lg bg-glass-dark border border-glass-border text-gray-300 hover:text-white hover:border-glass-border-hover transition-all duration-200"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
@@ -42,6 +44,11 @@ export function Header() {
           </motion.button>
         </div>
       </div>
+
+      <TutorialModal 
+        isOpen={isTutorialOpen} 
+        onClose={() => setIsTutorialOpen(false)} 
+      />
     </motion.header>
   );
 }
