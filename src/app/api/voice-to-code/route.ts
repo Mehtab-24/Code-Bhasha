@@ -19,8 +19,8 @@ console.log('[Voice-to-Code] Environment check:', {
 const bedrockClient = new BedrockRuntimeClient({
   region: AWS_REGION,
   credentials: {
-    accessKeyId: AWS_ACCESS_KEY_ID!,
-    secretAccessKey: AWS_SECRET_ACCESS_KEY!,
+    accessKeyId: AWS_ACCESS_KEY_ID as string,
+    secretAccessKey: AWS_SECRET_ACCESS_KEY as string,
   }
 });
 
@@ -38,17 +38,24 @@ async function generatePythonCode(hinglishText: string): Promise<{ code: string;
     const systemPrompt = `You are a Python code generator for Indian students learning to code.
 Your job is to convert Hinglish (Hindi + English) voice commands into clean, executable Python code.
 
-Rules:
-1. Generate ONLY valid Python 3 code - no markdown, no explanations outside the JSON.
-2. Add inline comments in Hinglish to explain what each line does.
-3. Keep the code simple and beginner-friendly.
-4. If the request is unclear, make reasonable assumptions.
-5. Always include proper indentation and syntax.
+CRITICAL RULES:
+1. You MUST ALWAYS return a valid JSON object with this exact structure:
+   {
+     "code": "<your Python code here>",
+     "explanation": "<brief Hinglish explanation>"
+   }
+2. The "code" field must contain ONLY valid Python 3 code - no markdown, no backticks, no explanations.
+3. Add inline comments in Hinglish to explain what each line does.
+4. Keep the code simple and beginner-friendly.
+5. If the request is unclear, make reasonable assumptions.
+6. Always include proper indentation and syntax.
+7. NEVER wrap the code in markdown code blocks (no \`\`\`python).
+8. The JSON must be valid and parseable.
 
-Return ONLY a valid JSON object:
+Example response format:
 {
-  "code": "<complete Python code with Hinglish comments>",
-  "explanation": "<1-2 sentence Hinglish summary of what the code does>"
+  "code": "# 1 se 10 tak odd numbers print karo\\nfor i in range(1, 11):\\n    if i % 2 != 0:\\n        print(i)",
+  "explanation": "Yeh code 1 se 10 tak ke odd numbers print karta hai"
 }`;
 
     const userPrompt = `Convert this Hinglish command to Python code:\n\n"${hinglishText}"`;
@@ -101,24 +108,57 @@ Return ONLY a valid JSON object:
 
     console.log('[Voice-to-Code] Extracted output text:', outputText.substring(0, 200) + '...');
 
-    // Parse the JSON response from Nova
+    // BULLETPROOF EXTRACTION LOGIC
+    // Try multiple extraction strategies in order of preference
+    
+    // Strategy 1: Try to extract JSON object
     const jsonMatch = outputText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.warn('[Voice-to-Code] ⚠️ Nova did not return JSON, using raw output');
-      // If Nova didn't return JSON, wrap the response
+    if (jsonMatch) {
+      try {
+        const result = JSON.parse(jsonMatch[0]);
+        console.log('[Voice-to-Code] ✅ Successfully parsed JSON response');
+        
+        // Extract code, removing any markdown wrappers if present
+        let code = result.code || '';
+        
+        // Remove markdown code blocks if they exist
+        code = code.replace(/```python\n?/g, '').replace(/```\n?/g, '').trim();
+        
+        return {
+          code: code || outputText,
+          explanation: result.explanation || 'Code generated from your voice command'
+        };
+      } catch (parseError) {
+        console.warn('[Voice-to-Code] ⚠️ JSON parse failed:', parseError);
+        console.warn('[Voice-to-Code] Trying fallback extraction strategies...');
+      }
+    }
+    
+    // Strategy 2: Try to extract code from markdown blocks
+    const markdownMatch = outputText.match(/```python\n([\s\S]*?)```/);
+    if (markdownMatch) {
+      console.log('[Voice-to-Code] ✅ Extracted code from markdown block');
       return {
-        code: outputText,
+        code: markdownMatch[1].trim(),
         explanation: 'Code generated from your voice command'
       };
     }
-
-    const result = JSON.parse(jsonMatch[0]);
     
-    console.log('[Voice-to-Code] ✅ Successfully parsed JSON response');
+    // Strategy 3: Try to extract any code block
+    const genericCodeMatch = outputText.match(/```\n?([\s\S]*?)```/);
+    if (genericCodeMatch) {
+      console.log('[Voice-to-Code] ✅ Extracted code from generic code block');
+      return {
+        code: genericCodeMatch[1].trim(),
+        explanation: 'Code generated from your voice command'
+      };
+    }
     
+    // Strategy 4: Fallback - use raw output as code
+    console.warn('[Voice-to-Code] ⚠️ No structured format found, using raw output as code');
     return {
-      code: result.code || outputText,
-      explanation: result.explanation || 'Code generated successfully'
+      code: outputText.trim(),
+      explanation: 'Code generated from your voice command'
     };
 
   } catch (error) {
@@ -189,6 +229,7 @@ export async function POST(req: Request) {
     });
 
   } catch (err) {
+    console.error('BACKEND BEDROCK ERROR:', err);
     console.error('🚨 BEDROCK API ERROR DETAILS 🚨');
     console.error('Error type:', err instanceof Error ? err.constructor.name : typeof err);
     console.error('Error message:', err instanceof Error ? err.message : String(err));

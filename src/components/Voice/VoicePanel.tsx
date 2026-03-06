@@ -7,9 +7,9 @@ import { useExecutionStore } from '@/store/useExecutionStore';
 
 // ─── Example prompts for quick testing ────────────────────────────────────────
 const EXAMPLE_PROMPTS = [
-  "1 se 10 tak odd numbers print karo",
   "List ko reverse karne ka function banao",
-  "Factorial of number user se input lekar",
+  "Factorial of number",
+  "1 se 10 tak odd numbers ka code likho",
   "Fibonacci series ka code likho"
 ];
 
