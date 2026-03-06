@@ -3,16 +3,16 @@ import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedroc
 import { z } from 'zod';
 
 // 1. Initialize Bedrock Client (Securely using server-side env vars)
-console.log("🔍 ENV VAR CHECK:");
-console.log("Region:", process.env.AWS_REGION);
-console.log("Access Key:", process.env.AWS_ACCESS_KEY_ID ? "Loaded!" : "MISSING!");
-console.log("Secret Key:", process.env.AWS_SECRET_ACCESS_KEY ? "Loaded!" : "MISSING!");
+console.log("🔍 DEBUG API ENV VAR CHECK:");
+console.log("Region:", process.env.BEDROCK_AWS_REGION || process.env.AWS_REGION);
+console.log("Access Key:", (process.env.BEDROCK_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID) ? "Loaded!" : "MISSING!");
+console.log("Secret Key:", (process.env.BEDROCK_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY) ? "Loaded!" : "MISSING!");
 
 const client = new BedrockRuntimeClient({
-  region: process.env.AWS_REGION || "us-east-1",
+  region: process.env.BEDROCK_AWS_REGION || process.env.AWS_REGION || "us-east-1",
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+    accessKeyId: (process.env.BEDROCK_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID) as string,
+    secretAccessKey: (process.env.BEDROCK_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY) as string,
   }
 });
 
@@ -29,6 +29,15 @@ const DebugSchema = z.object({
 
 export async function POST(req: Request) {
   try {
+    // Strict validation at request start
+    if (!process.env.BEDROCK_AWS_ACCESS_KEY_ID && !process.env.AWS_ACCESS_KEY_ID) {
+      console.error("❌ CRITICAL: Missing Bedrock Environment Variables in Debug API!");
+      return NextResponse.json(
+        { friendly_message: "Bhai, server configuration mein problem hai.", fix_suggestion: "Admin se contact karo.", corrected_line: null },
+        { status: 500 }
+      );
+    }
+
     const body = await req.json();
     const { code, error } = DebugSchema.parse(body);
 
@@ -79,7 +88,7 @@ export async function POST(req: Request) {
     return NextResponse.json(finalJson);
 
   } catch (err) {
-    console.error("Debug API Error:", err);
+    console.error("🚨 DEBUGGER API ERROR DETAILS 🚨", err);
     return NextResponse.json(
       { friendly_message: "Bhai, server mein kuch dikkat aayi. Thodi der mein try karo.", fix_suggestion: "Wait for 1 minute.", corrected_line: null },
       { status: 500 }
