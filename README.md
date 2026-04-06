@@ -1,4 +1,9 @@
-# CodeBhasha
+<h1 align="center">CodeBhasha</h1>
+
+<p align="center">
+  <img width="500" height="500" alt="AWS_Hackathon_Badge" src="https://github.com/user-attachments/assets/474b0c81-5409-4afd-a4b4-1c28d20cc1e0" />
+</p>
+
 
 **Tagline:** *Syntax is a barrier; Logic is universal.*
 
