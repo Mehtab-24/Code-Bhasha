@@ -351,7 +351,6 @@ export function AppShell() {
       {/* ── Header ────────────────────────────────────────── */}
       <div className="relative z-10">
         <Header />
-        <TutorDrawer />
       </div>
 
       {/* ── Main layout ───────────────────────────────────── */}
@@ -482,6 +481,9 @@ export function AppShell() {
           />
         </motion.div>
       </motion.main>
+
+      {/* Socratic Tutor Drawer */}
+      <TutorDrawer />
 
       {/* Download Modal */}
       <DownloadModal 
