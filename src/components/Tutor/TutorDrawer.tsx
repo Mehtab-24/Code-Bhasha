@@ -51,12 +51,12 @@ export function TutorDrawer() {
 
         {/* Drawer Sheet */}
         <motion.div
-          className="relative w-full max-w-md sm:max-w-lg h-full flex flex-col glass pointer-events-auto border-l border-glass-border shadow-2xl"
+          className="relative w-full max-w-md sm:max-w-lg h-full flex flex-col pointer-events-auto border-l border-glass-border shadow-2xl"
           initial={{ x: '100%' }}
           animate={{ x: 0 }}
           exit={{ x: '100%' }}
           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-          style={{ background: 'rgba(10, 10, 10, 0.95)' }}
+          style={{ background: 'rgba(10, 10, 10, 0.98)' }}
         >
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-glass-border bg-black/40">

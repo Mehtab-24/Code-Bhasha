@@ -415,86 +415,9 @@ export function AppShell() {
         {/* ── Code Editor ───────────────────────────────── */}
         <motion.div
           variants={itemVariants}
-          className="flex-1 rounded-xl overflow-hidden"
-          style={{
-            background: 'rgba(255,255,255,0.025)',
-            border: '1px solid rgba(255,255,255,0.07)',
-            backdropFilter: 'blur(16px)',
-            boxShadow: '0 4px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)',
-            minHeight: '280px',
-          }}
+          className="flex-1 flex flex-col"
+          style={{ minHeight: '280px' }}
         >
-          {/* Editor chrome bar */}
-          <div
-            className="flex items-center justify-between px-4 py-2.5 border-b"
-            style={{ borderColor: 'rgba(255,255,255,0.06)' }}
-          >
-            {/* Fake traffic lights */}
-            <div className="flex items-center gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'rgba(255,95,86,0.5)' }} />
-              <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'rgba(255,189,46,0.5)' }} />
-              <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'rgba(39,201,63,0.5)' }} />
-            </div>
-
-            {/* Center: filename */}
-            <span
-              className="text-xs font-mono tracking-widest uppercase"
-              style={{ color: 'rgba(255,255,255,0.18)', letterSpacing: '0.12em' }}
-            >
-              {activeFile?.name || 'main.py'}
-            </span>
-
-            {/* Right: utility buttons + status */}
-            <div className="flex items-center gap-2">
-              {/* Copy button */}
-              <motion.button
-                onClick={handleCopyCode}
-                className="p-1.5 rounded-md transition-colors duration-200"
-                style={{
-                  color: isCopied ? '#00FFA3' : 'rgba(255,255,255,0.3)',
-                }}
-                whileHover={{ 
-                  color: isCopied ? '#00FFA3' : 'rgba(255,255,255,0.7)',
-                  scale: 1.05 
-                }}
-                whileTap={{ scale: 0.95 }}
-                title={isCopied ? 'Copied!' : 'Copy code'}
-              >
-                {isCopied ? (
-                  <Check className="w-3.5 h-3.5" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5" />
-                )}
-              </motion.button>
-
-              {/* Download button */}
-              <motion.button
-                onClick={handleDownloadCode}
-                className="p-1.5 rounded-md transition-colors duration-200"
-                style={{
-                  color: 'rgba(255,255,255,0.3)',
-                }}
-                whileHover={{ 
-                  color: 'rgba(255,255,255,0.7)',
-                  scale: 1.05 
-                }}
-                whileTap={{ scale: 0.95 }}
-                title="Download as main.py"
-              >
-                <Download className="w-3.5 h-3.5" />
-              </motion.button>
-
-              {/* Divider */}
-              <div 
-                className="w-px h-4" 
-                style={{ background: 'rgba(255,255,255,0.1)' }}
-              />
-
-              {/* Worker status */}
-              <WorkerStatusDot isReady={isWorkerReady} />
-            </div>
-          </div>
-
           <CodeEditor 
             value={activeFile?.content || ''} 
             onChange={(newContent) => {
@@ -543,50 +466,12 @@ export function AppShell() {
         {/* ── Output Panel ──────────────────────────────── */}
         <motion.div
           variants={itemVariants}
-          className="rounded-xl overflow-hidden"
+          className="flex flex-col"
           style={{
-            background: 'rgba(0,0,0,0.4)',
-            border: `1px solid ${isExecuting ? 'rgba(0, 255, 163, 0.2)' : 'rgba(255,255,255,0.07)'}`,
-            backdropFilter: 'blur(16px)',
-            boxShadow: isExecuting
-              ? '0 0 24px rgba(0,255,163,0.06), inset 0 1px 0 rgba(0,255,163,0.04)'
-              : '0 4px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03)',
             height: '30vh',
             minHeight: '200px',
-            transition: 'border-color 0.4s, box-shadow 0.4s',
           }}
         >
-          {/* Output chrome bar */}
-          <div
-            className="flex items-center justify-between px-4 py-2.5 border-b"
-            style={{ borderColor: 'rgba(255,255,255,0.05)' }}
-          >
-            <div className="flex items-center gap-2">
-              <motion.div
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ background: isExecuting ? '#00FFA3' : 'rgba(255,255,255,0.2)' }}
-                animate={isExecuting ? { opacity: [1, 0.3, 1] } : { opacity: 1 }}
-                transition={{ duration: 1, repeat: Infinity }}
-              />
-              <span
-                className="text-xs font-mono tracking-widest uppercase"
-                style={{ color: 'rgba(255,255,255,0.18)', letterSpacing: '0.12em' }}
-              >
-                output
-              </span>
-            </div>
-            {executionTime !== null && !isExecuting && (
-              <motion.span
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="text-xs font-mono"
-                style={{ color: 'rgba(0,255,163,0.45)' }}
-              >
-                {executionTime}ms
-              </motion.span>
-            )}
-          </div>
-
           <OutputPanel
             output={displayOutput}
             error={error}

@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Monaco } from '@monaco-editor/react';
 import type * as monacoEditor from 'monaco-editor';
 import { useExecutionStore } from '@/store/useExecutionStore';
-import { Plus, X, History, RotateCcw, Award } from 'lucide-react';
+import { Plus, X, History, RotateCcw, Award, Copy, Download, Check } from 'lucide-react';
 
 interface CodeEditorProps {
   value: string;
@@ -283,8 +283,35 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
     reviewResult,
     isReviewing,
     triggerCodeReview,
-    clearCodeReview
+    clearCodeReview,
+    isWorkerReady
   } = useExecutionStore();
+
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.warn('Failed to copy code:', err);
+    }
+  };
+
+  const handleDownloadCode = () => {
+    const activeFile = files.find(f => f.id === activeFileId);
+    if (!activeFile) return;
+    const blob = new Blob([activeFile.content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = activeFile.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   useMonacoTextareaFix();
 
@@ -542,6 +569,44 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
           <Award className="w-3.5 h-3.5 mr-1 text-emerald-400" />
           <span className="text-[10px] font-mono font-medium text-emerald-300">Review Code</span>
         </motion.button>
+
+        {/* Copy button */}
+        <motion.button
+          onClick={handleCopyCode}
+          className="flex items-center justify-center px-3 border-l shrink-0 cursor-pointer text-gray-400 hover:text-white"
+          style={{ borderColor: 'rgba(255,255,255,0.06)' }}
+          whileHover={{ background: 'rgba(255,255,255,0.04)' }}
+          whileTap={{ scale: 0.95 }}
+          title={isCopied ? 'Copied!' : 'Copy Code'}
+        >
+          {isCopied ? (
+            <Check className="w-3.5 h-3.5 text-emerald-400" />
+          ) : (
+            <Copy className="w-3.5 h-3.5" />
+          )}
+        </motion.button>
+
+        {/* Download button */}
+        <motion.button
+          onClick={handleDownloadCode}
+          className="flex items-center justify-center px-3 border-l shrink-0 cursor-pointer text-gray-400 hover:text-white"
+          style={{ borderColor: 'rgba(255,255,255,0.06)' }}
+          whileHover={{ background: 'rgba(255,255,255,0.04)' }}
+          whileTap={{ scale: 0.95 }}
+          title="Download Code"
+        >
+          <Download className="w-3.5 h-3.5" />
+        </motion.button>
+
+        {/* Engine status indicator */}
+        <div className="flex items-center px-3 border-l shrink-0" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+          <div className="flex items-center gap-1.5 select-none">
+            <div className={`w-1.5 h-1.5 rounded-full ${isWorkerReady ? 'bg-emerald-400' : 'bg-yellow-400 animate-pulse'}`} />
+            <span className="text-[9px] font-mono text-gray-400 hidden sm:inline">
+              {isWorkerReady ? 'Ready' : 'Booting'}
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* ── Monaco mount zone ─────────────────────────────────────────────
@@ -624,9 +689,9 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
         <AnimatePresence>
           {isHistoryOpen && (
             <motion.div
-              className="absolute right-0 top-0 bottom-0 w-72 z-20 flex flex-col border-l backdrop-blur-md"
+              className="absolute right-0 top-0 bottom-0 w-72 z-20 flex flex-col border-l"
               style={{
-                background: 'rgba(13,13,13,0.85)',
+                background: 'rgba(13,13,13,0.98)',
                 borderColor: 'rgba(255,255,255,0.08)',
               }}
               initial={{ x: '100%' }}
@@ -698,9 +763,9 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
         <AnimatePresence>
           {isReviewOpen && (
             <motion.div
-              className="absolute right-0 top-0 bottom-0 w-full max-w-sm sm:max-w-md z-20 flex flex-col border-l backdrop-blur-md"
+              className="absolute right-0 top-0 bottom-0 w-full max-w-sm sm:max-w-md z-20 flex flex-col border-l"
               style={{
-                background: 'rgba(10,10,10,0.95)',
+                background: 'rgba(10,10,10,0.98)',
                 borderColor: 'rgba(255,255,255,0.08)',
               }}
               initial={{ x: '100%' }}

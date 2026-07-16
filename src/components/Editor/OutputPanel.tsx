@@ -717,8 +717,16 @@ export function OutputPanel({
 
   return (
     <div
-      className="relative h-full flex flex-col overflow-hidden"
-      style={{ background: '#050505' }}
+      className="relative h-full flex flex-col overflow-hidden w-full"
+      style={{
+        background: '#050505',
+        border: `1px solid ${isExecuting ? 'rgba(34, 211, 238, 0.2)' : 'rgba(255,255,255,0.07)'}`,
+        borderRadius: 12,
+        boxShadow: isExecuting
+          ? '0 0 24px rgba(34,211,238,0.06), inset 0 1px 0 rgba(34,211,238,0.04)'
+          : '0 24px 60px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.03)',
+        transition: 'border-color 0.4s, box-shadow 0.4s'
+      }}
     >
       <TerminalScanlines />
 
