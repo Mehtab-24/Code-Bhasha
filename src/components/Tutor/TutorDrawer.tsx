@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { createPortal } from 'react-dom';
 import { X, Send, Sparkles, Trash2, ShieldAlert } from 'lucide-react';
 import { useExecutionStore } from '@/store/useExecutionStore';
 
@@ -37,9 +38,14 @@ export function TutorDrawer() {
     sendTutorMessage(text);
   };
 
-  return (
+  if (typeof window === 'undefined') return null;
+
+  return createPortal(
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex justify-end pointer-events-none">
+      <div 
+        className="fixed inset-0 flex justify-end pointer-events-none"
+        style={{ zIndex: 99999 }}
+      >
         {/* Backdrop overlay */}
         <motion.div
           className="absolute inset-0 bg-black/40 pointer-events-auto backdrop-blur-xs"
@@ -185,7 +191,8 @@ export function TutorDrawer() {
           </form>
         </motion.div>
       </div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }
 export default TutorDrawer;

@@ -2,6 +2,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useExecutionStore } from '@/store/useExecutionStore';
 import { X, Lock, Mail, User, ShieldAlert } from 'lucide-react';
 
@@ -42,10 +43,15 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
     }
   };
 
-  return (
+  if (typeof window === 'undefined') return null;
+
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div 
+          className="fixed inset-0 flex items-center justify-center p-4"
+          style={{ zIndex: 99999 }}
+        >
           {/* Backdrop blur overlay */}
           <motion.div
             className="fixed inset-0 bg-black/60 backdrop-blur-md"
@@ -193,7 +199,8 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }
 export default AuthModal;

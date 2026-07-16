@@ -10,6 +10,8 @@ import { OutputPanel } from './Editor/OutputPanel';
 import { DownloadModal } from './Editor/DownloadModal';
 import { StdinPanel } from './Editor/StdinPanel';
 import { TutorDrawer } from './Tutor/TutorDrawer';
+import { AuthModal } from './AuthModal';
+import { TutorialModal } from './TutorialModal';
 import { useExecutionStore } from '@/store/useExecutionStore';
 import { getExecutionService } from '@/lib/execution-service';
 
@@ -224,6 +226,8 @@ export function AppShell() {
   const [activeMode, setActiveMode] = useState<'voice' | 'text'>('voice');
   const [isCopied, setIsCopied] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
 
   const {
     files,
@@ -349,8 +353,11 @@ export function AppShell() {
       />
 
       {/* ── Header ────────────────────────────────────────── */}
-      <div className="relative z-40">
-        <Header />
+      <div className="relative z-40" style={{ zIndex: 40 }}>
+        <Header 
+          onOpenAuth={() => setIsAuthOpen(true)}
+          onOpenTutorial={() => setIsTutorialOpen(true)}
+        />
       </div>
 
       {/* ── Main layout ───────────────────────────────────── */}
@@ -484,6 +491,18 @@ export function AppShell() {
 
       {/* Socratic Tutor Drawer */}
       <TutorDrawer />
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+      />
+
+      {/* Tutorial Modal */}
+      <TutorialModal
+        isOpen={isTutorialOpen}
+        onClose={() => setIsTutorialOpen(false)}
+      />
 
       {/* Download Modal */}
       <DownloadModal 

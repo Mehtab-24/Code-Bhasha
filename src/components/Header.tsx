@@ -7,9 +7,12 @@ import { useExecutionStore } from '@/store/useExecutionStore';
 import { TutorialModal } from './TutorialModal';
 import { AuthModal } from './AuthModal';
 
-export function Header() {
-  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
+interface HeaderProps {
+  onOpenAuth: () => void;
+  onOpenTutorial: () => void;
+}
+
+export function Header({ onOpenAuth, onOpenTutorial }: HeaderProps) {
 
   const { 
     user, 
@@ -116,7 +119,7 @@ export function Header() {
           ) : (
             // Logged Out control
             <motion.button
-              onClick={() => setIsAuthOpen(true)}
+              onClick={onOpenAuth}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-purple-600/90 to-blue-600/90 border border-purple-500/20 text-xs font-mono text-white font-semibold transition-all duration-250 shadow-md"
               whileHover={{ scale: 1.03, filter: 'brightness(1.1)' }}
               whileTap={{ scale: 0.97 }}
@@ -148,7 +151,7 @@ export function Header() {
 
           {/* Help / Tutorial */}
           <motion.button
-            onClick={() => setIsTutorialOpen(true)}
+            onClick={onOpenTutorial}
             className="p-2 rounded-lg bg-glass-dark border border-glass-border text-gray-400 hover:text-white hover:border-glass-border-hover transition-all duration-200 cursor-pointer"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
@@ -159,16 +162,6 @@ export function Header() {
         </div>
       </div>
 
-      {/* Modals */}
-      <TutorialModal 
-        isOpen={isTutorialOpen} 
-        onClose={() => setIsTutorialOpen(false)} 
-      />
-
-      <AuthModal
-        isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
-      />
     </motion.header>
   );
 }
