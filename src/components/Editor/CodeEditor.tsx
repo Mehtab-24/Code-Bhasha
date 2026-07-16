@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Monaco } from '@monaco-editor/react';
 import type * as monacoEditor from 'monaco-editor';
 import { useExecutionStore } from '@/store/useExecutionStore';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, History, RotateCcw, Award } from 'lucide-react';
 
 interface CodeEditorProps {
   value: string;
@@ -261,6 +261,11 @@ function CharCounter({ value }: { value: string }) {
 export function CodeEditor({ value, onChange }: CodeEditorProps) {
   const [isEditorMounted, setIsEditorMounted] = useState(false);
   const editorRef = useRef<monacoEditor.editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<any>(null);
+  const decorationsRef = useRef<string[]>([]);
+
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
 
   // Get file management from store
   const { 
@@ -269,10 +274,54 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
     setActiveFile, 
     createFile, 
     deleteFile, 
-    renameFile 
+    renameFile,
+    checkpoints,
+    restoreCheckpoint,
+    isSaving,
+    traceSteps,
+    currentTraceIndex,
+    reviewResult,
+    isReviewing,
+    triggerCodeReview,
+    clearCodeReview
   } = useExecutionStore();
 
   useMonacoTextareaFix();
+
+  // Highlights active execution tracer line
+  useEffect(() => {
+    if (!editorRef.current || !monacoRef.current || !traceSteps || currentTraceIndex === null) {
+      if (editorRef.current && decorationsRef.current.length > 0) {
+        decorationsRef.current = editorRef.current.deltaDecorations(decorationsRef.current, []);
+      }
+      return;
+    }
+
+    const currentStep = traceSteps[currentTraceIndex];
+    if (!currentStep) return;
+
+    const line = currentStep.line;
+    const monaco = monacoRef.current;
+
+    const newDecorations = [
+      {
+        range: new monaco.Range(line, 1, line, 1),
+        options: {
+          isWholeLine: true,
+          className: 'cb-trace-line-highlight',
+          glyphMarginClassName: 'cb-trace-glyph-margin'
+        }
+      }
+    ];
+
+    decorationsRef.current = editorRef.current.deltaDecorations(
+      decorationsRef.current,
+      newDecorations
+    );
+
+    // Center viewport on the active execution line pointers
+    editorRef.current.revealLineInCenterIfOutsideViewport(line);
+  }, [currentTraceIndex, traceSteps]);
 
   const handleEditorMount = async (
     editor: monacoEditor.editor.IStandaloneCodeEditor,
@@ -447,6 +496,52 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
         >
           <Plus className="w-3.5 h-3.5" />
         </motion.button>
+
+        {/* Version history toggle button */}
+        <motion.button
+          onClick={() => setIsHistoryOpen(!isHistoryOpen)}
+          className="flex items-center justify-center px-3 border-l shrink-0 cursor-pointer"
+          style={{
+            borderColor: 'rgba(255,255,255,0.06)',
+            color: isHistoryOpen ? '#a78bfa' : 'rgba(255,255,255,0.3)',
+            background: isHistoryOpen ? 'rgba(167,139,250,0.05)' : 'transparent',
+          }}
+          whileHover={{ 
+            background: 'rgba(255,255,255,0.04)',
+            color: isHistoryOpen ? '#c084fc' : 'rgba(255,255,255,0.6)'
+          }}
+          whileTap={{ scale: 0.95 }}
+          title="Version history checkpoints"
+        >
+          <History className="w-3.5 h-3.5" />
+        </motion.button>
+
+        {/* Code Review toggle button */}
+        <motion.button
+          onClick={async () => {
+            const activeFile = files.find(f => f.id === activeFileId);
+            if (activeFile) {
+              setIsHistoryOpen(false); // Close version history if open
+              setIsReviewOpen(true);
+              await triggerCodeReview(activeFile.content);
+            }
+          }}
+          className="flex items-center justify-center px-3 border-l shrink-0 cursor-pointer"
+          style={{
+            borderColor: 'rgba(255,255,255,0.06)',
+            color: isReviewOpen ? '#34d399' : 'rgba(255,255,255,0.3)',
+            background: isReviewOpen ? 'rgba(52,211,153,0.05)' : 'transparent',
+          }}
+          whileHover={{ 
+            background: 'rgba(255,255,255,0.04)',
+            color: isReviewOpen ? '#10b981' : 'rgba(255,255,255,0.6)'
+          }}
+          whileTap={{ scale: 0.95 }}
+          title="Review My Code"
+        >
+          <Award className="w-3.5 h-3.5 mr-1 text-emerald-400" />
+          <span className="text-[10px] font-mono font-medium text-emerald-300">Review Code</span>
+        </motion.button>
       </div>
 
       {/* ── Monaco mount zone ─────────────────────────────────────────────
@@ -524,6 +619,211 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
           }}
           loading={null}
         />
+
+        {/* Version History Drawer */}
+        <AnimatePresence>
+          {isHistoryOpen && (
+            <motion.div
+              className="absolute right-0 top-0 bottom-0 w-72 z-20 flex flex-col border-l backdrop-blur-md"
+              style={{
+                background: 'rgba(13,13,13,0.85)',
+                borderColor: 'rgba(255,255,255,0.08)',
+              }}
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            >
+              {/* Drawer Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+                <span className="text-xs font-mono font-bold tracking-wide text-gray-300 uppercase flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-purple-400" />
+                  Version History
+                </span>
+                <button 
+                  onClick={() => setIsHistoryOpen(false)}
+                  className="p-1 rounded hover:bg-white/5 text-gray-500 hover:text-gray-300"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Checkpoint list */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-track]:bg-transparent">
+                {checkpoints.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-4">
+                    <p className="text-xs font-mono text-gray-500">No checkpoints yet.</p>
+                    <p className="text-[10px] font-mono text-gray-600 mt-1">Keep typing to trigger automatic snapshots.</p>
+                  </div>
+                ) : (
+                  [...checkpoints].reverse().map((cp) => (
+                    <div 
+                      key={cp.id}
+                      className="p-2.5 rounded-lg border text-left group transition-all"
+                      style={{
+                        background: 'rgba(255,255,255,0.02)',
+                        borderColor: 'rgba(255,255,255,0.04)',
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-mono text-gray-400">
+                          {new Date(cp.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </span>
+                        <button
+                          onClick={() => {
+                            if (activeFileId) {
+                              restoreCheckpoint(activeFileId, cp.content);
+                              onChange?.(cp.content);
+                            }
+                          }}
+                          className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-purple-500/20 text-purple-400 hover:text-purple-300 transition-all flex items-center gap-1 text-[9px] font-mono"
+                          title="Restore this version"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          Restore
+                        </button>
+                      </div>
+                      <p className="text-[11px] font-mono text-gray-500 truncate mt-1.5 opacity-80 select-none">
+                        {cp.content.replace(/^\s+|\s+$/g, '').slice(0, 50) || 'Empty file'}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Code Review Drawer */}
+        <AnimatePresence>
+          {isReviewOpen && (
+            <motion.div
+              className="absolute right-0 top-0 bottom-0 w-full max-w-sm sm:max-w-md z-20 flex flex-col border-l backdrop-blur-md"
+              style={{
+                background: 'rgba(10,10,10,0.95)',
+                borderColor: 'rgba(255,255,255,0.08)',
+              }}
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            >
+              {/* Drawer Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+                <span className="text-xs font-mono font-bold tracking-wide text-gray-300 uppercase flex items-center gap-1.5">
+                  <Award className="w-4 h-4 text-emerald-400" />
+                  Code Review Scorecard
+                </span>
+                <button 
+                  onClick={() => {
+                    setIsReviewOpen(false);
+                    clearCodeReview();
+                  }}
+                  className="p-1 rounded hover:bg-white/5 text-gray-500 hover:text-gray-300 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Drawer Content */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-track]:bg-transparent">
+                {isReviewing ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3 select-none">
+                    <motion.div
+                      className="w-10 h-10 rounded-full border-t-2 border-emerald-500"
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                    />
+                    <p className="text-xs font-mono text-gray-400">Bhai, code scan kiya ja raha hai...</p>
+                    <p className="text-[10px] text-gray-600 font-mono">Complexity, bug checks and style checks running.</p>
+                  </div>
+                ) : !reviewResult ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-6">
+                    <p className="text-xs font-mono text-gray-500">Bhai, koi review select nahi hai.</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Score Card Dashboard */}
+                    <div className="grid grid-cols-3 gap-3 p-3 rounded-xl border border-white/5 bg-white/5 select-none">
+                      <div className="text-center">
+                        <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider block">Style Score</span>
+                        <span className="text-2xl font-bold font-mono text-emerald-400 block mt-1">{reviewResult.styleScore}%</span>
+                      </div>
+                      <div className="text-center border-x border-white/5 px-2">
+                        <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider block">Time Comp.</span>
+                        <span className="text-xs font-bold font-mono text-cyan-400 block mt-2 truncate" title={reviewResult.timeComplexity}>{reviewResult.timeComplexity.split(' ')[0]}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider block">Space Comp.</span>
+                        <span className="text-xs font-bold font-mono text-purple-400 block mt-2 truncate" title={reviewResult.spaceComplexity}>{reviewResult.spaceComplexity.split(' ')[0]}</span>
+                      </div>
+                    </div>
+
+                    {/* Complexity explanation description */}
+                    <div className="p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/10 space-y-1.5">
+                      <h4 className="text-[10px] font-bold font-mono text-cyan-400 uppercase tracking-wider">Complexity Details</h4>
+                      <p className="text-[11px] font-mono text-gray-300 leading-relaxed">
+                        <span className="text-cyan-400 font-semibold">Time: </span>{reviewResult.timeComplexity}
+                      </p>
+                      <p className="text-[11px] font-mono text-gray-300 leading-relaxed">
+                        <span className="text-purple-400 font-semibold">Space: </span>{reviewResult.spaceComplexity}
+                      </p>
+                    </div>
+
+                    {/* Bugs Listing Section */}
+                    <div className="space-y-2">
+                      <h4 className="text-[10px] font-bold font-mono text-gray-400 uppercase tracking-wider">Bugs & Logic Risks ({reviewResult.bugs.length})</h4>
+                      {reviewResult.bugs.length === 0 ? (
+                        <div className="p-3 rounded-xl bg-emerald-950/15 border border-emerald-500/10 text-center">
+                          <p className="text-xs font-mono text-emerald-400">✨ Kamaal hai! Koi warning ya bug nahi mila.</p>
+                        </div>
+                      ) : (
+                        reviewResult.bugs.map((bug, idx) => (
+                          <div key={idx} className={`p-3 rounded-xl border ${
+                            bug.severity === 'high' 
+                              ? 'bg-red-950/20 border-red-500/20' 
+                              : bug.severity === 'medium'
+                              ? 'bg-yellow-950/20 border-yellow-500/20'
+                              : 'bg-blue-950/20 border-blue-500/20'
+                          } space-y-1.5`}>
+                            <div className="flex items-center justify-between">
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase ${
+                                bug.severity === 'high'
+                                  ? 'bg-red-500/20 text-red-400'
+                                  : bug.severity === 'medium'
+                                  ? 'bg-yellow-500/20 text-yellow-400'
+                                  : 'bg-blue-500/20 text-blue-400'
+                              }`}>
+                                {bug.severity} severity
+                              </span>
+                            </div>
+                            <p className="text-[11px] font-mono text-gray-200">{bug.description}</p>
+                            <p className="text-[10px] font-mono text-gray-400 border-t border-white/5 pt-1.5 mt-1.5">
+                              <span className="text-emerald-400 font-bold">Fix: </span>{bug.suggestion}
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Suggestions Section */}
+                    <div className="space-y-2">
+                      <h4 className="text-[10px] font-bold font-mono text-gray-400 uppercase tracking-wider">Clean Code suggestions</h4>
+                      <ul className="space-y-1.5">
+                        {reviewResult.suggestions.map((sug, idx) => (
+                          <li key={idx} className="text-xs font-mono text-gray-300 flex items-start gap-1.5 p-2 rounded bg-white/5 border border-white/5">
+                            <span className="text-emerald-400 mt-0.5 shrink-0 select-none">✔</span>
+                            <span>{sug}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* ── Status bar ────────────────────────────────────── */}
@@ -534,6 +834,11 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
         <div className="flex items-center gap-3">
           <span className="font-mono select-none" style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.12em' }}>Python 3</span>
           <span className="font-mono select-none" style={{ fontSize: 10, color: 'rgba(255,255,255,0.1)', letterSpacing: '0.1em' }}>UTF-8</span>
+          <div className="w-px h-3 shrink-0" style={{ background: 'rgba(255,255,255,0.06)' }} />
+          <span className="font-mono select-none flex items-center gap-1.5" style={{ fontSize: 10, color: isSaving ? 'rgba(167,139,250,0.6)' : 'rgba(34,211,238,0.5)' }}>
+            <span className={`w-1.5 h-1.5 rounded-full ${isSaving ? 'bg-purple-400 animate-pulse' : 'bg-cyan-400'}`} style={{ boxShadow: isSaving ? '0 0 6px #a78bfa' : '0 0 6px #22d3ee' }} />
+            {isSaving ? 'Auto-saving...' : 'Saved to browser'}
+          </span>
         </div>
         <span className="font-mono select-none" style={{ fontSize: 10, color: 'rgba(255,255,255,0.15)', letterSpacing: '0.1em' }}>Spaces: 4</span>
       </div>

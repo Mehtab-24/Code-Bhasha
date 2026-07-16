@@ -8,6 +8,11 @@ interface OutputMessage {
   id: string;
 }
 
+interface TraceStep {
+  line: number;
+  variables: Record<string, string>;
+}
+
 interface ErrorMessage {
   type: 'ERROR';
   payload: {
@@ -16,12 +21,14 @@ interface ErrorMessage {
     lineno: number;
     line_text: string;
   };
+  trace?: TraceStep[];
   id: string;
 }
 
 interface DoneMessage {
   type: 'DONE';
   executionTime: number;
+  trace: TraceStep[];
   id: string;
 }
 
@@ -40,14 +47,17 @@ export interface ExecutionResult {
     lineno: number;
     line_text: string;
   };
+  trace?: TraceStep[];
   executionTime?: number;
   status: 'running' | 'completed' | 'error' | 'timeout';
 }
 
 export type ExecutionCallback = (result: ExecutionResult) => void;
 
+import { WorkerPool } from './worker-pool';
+
 class ExecutionService {
-  private worker: Worker | null = null;
+  private pool: WorkerPool | null = null;
   private isWorkerReady = false;
   private currentExecution: {
     id: string;
@@ -61,8 +71,7 @@ class ExecutionService {
     callback: ExecutionCallback;
   }> = [];
 
-  // FIX: Subscriber list for the READY event.
-  // AppShell subscribes via onReady() instead of polling with setInterval.
+  // Subscriber list for the READY event.
   private readyListeners: Array<() => void> = [];
 
   constructor() {
@@ -71,7 +80,7 @@ class ExecutionService {
 
   // ── Public API: subscribe to the worker-ready event ──────────────────────────
   // Returns an unsubscribe function for cleanup in useEffect.
-  // If the worker is already ready when this is called (e.g. after HMR),
+  // If the worker is already ready when this is called,
   // the listener fires synchronously so the UI never gets stuck.
   public onReady(listener: () => void): () => void {
     if (this.isWorkerReady) {
@@ -92,186 +101,17 @@ class ExecutionService {
 
   private async initializeWorker() {
     try {
-      // The inline blob avoids Next.js module bundling issues with Web Workers.
-      // It mirrors pyodide-worker.ts but as a plain JS string so it can be
-      // loaded via URL.createObjectURL without a bundler plugin.
-      const workerCode = `
-        let pyodide = null;
-        let isInitialized = false;
-        let currentExecutionId = '';
-
-        importScripts('https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js');
-
-        async function initializePyodide() {
-          try {
-            console.log('[Worker] Loading Pyodide...');
-
-            pyodide = await loadPyodide({
-              indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/',
-            });
-
-            // FIX: Use Pyodide's native JS-side stream hooks.
-            // Previous approach monkey-patched console.log and used a Python
-            // OutputCapture class that called print(..., file=sys.__stdout__).
-            // That never actually triggered the JS console — output was lost.
-            // setStdout/setStderr are the correct, documented API.
-            pyodide.setStdout({
-              batched: (line) => {
-                self.postMessage({
-                  type: 'STDOUT',
-                  line: line,
-                  id: currentExecutionId
-                });
-              }
-            });
-
-            pyodide.setStderr({
-              batched: (line) => {
-                self.postMessage({
-                  type: 'STDERR',
-                  line: line,
-                  id: currentExecutionId
-                });
-              }
-            });
-
-            isInitialized = true;
-            console.log('[Worker] Pyodide initialized successfully');
-
-            // FIX: Post READY immediately — this is the single signal the
-            // main thread waits for. The old code did post READY but it was
-            // lost because the blob's console.log intercept was breaking the
-            // message handler registration timing.
-            self.postMessage({ type: 'READY' });
-
-          } catch (error) {
-            console.error('[Worker] Failed to initialize Pyodide:', error);
-            self.postMessage({
-              type: 'ERROR',
-              payload: {
-                type: 'InitializationError',
-                message: 'Browser execution load nahi ho raha. Page reload karo.',
-                lineno: 0,
-                line_text: ''
-              },
-              id: 'init'
-            });
-          }
+      this.pool = new WorkerPool(
+        (event) => this.handleWorkerMessage(event.data),
+        (error) => {
+          console.error('[ExecutionService] Worker error:', error);
+          this.handleWorkerError();
+        },
+        () => {
+          console.log('[ExecutionService] Worker exited');
+          this.handleWorkerTimeout();
         }
-
-        async function executePythonCode(code, executionId, stdinContent) {
-          if (!pyodide || !isInitialized) {
-            self.postMessage({
-              type: 'ERROR',
-              payload: {
-                type: 'NotInitialized',
-                message: 'Python engine abhi ready nahi hai. Thoda wait karo.',
-                lineno: 0,
-                line_text: ''
-              },
-              id: executionId
-            });
-            return;
-          }
-
-          const startTime = performance.now();
-
-          const timeoutId = setTimeout(() => {
-            console.log('[Worker] Execution timeout - terminating worker');
-            self.close();
-          }, 10000);
-
-          try {
-            // Point stream output at this execution's id
-            currentExecutionId = executionId;
-
-            // Set up stdin queue
-            const inputs = stdinContent ? stdinContent.split('\\n') : [];
-            pyodide.setStdin({
-              stdin: () => {
-                const value = inputs.shift();
-                return value !== undefined ? value : '';
-              }
-            });
-
-            // Run user code — stdout/stderr already wired via setStdout/setStderr
-            await pyodide.runPythonAsync(code);
-
-            const executionTime = performance.now() - startTime;
-            clearTimeout(timeoutId);
-
-            self.postMessage({
-              type: 'DONE',
-              executionTime: Math.round(executionTime),
-              id: executionId
-            });
-
-          } catch (error) {
-            clearTimeout(timeoutId);
-
-            let errorType = 'PythonError';
-            let errorMessage = (error && error.message) ? error.message : 'Unknown error occurred';
-            let lineNumber = 0;
-            let lineText = '';
-
-            if (error && error.message) {
-              const lineMatch = error.message.match(/line (\\d+)/);
-              if (lineMatch) lineNumber = parseInt(lineMatch[1], 10);
-
-              const typeMatch = error.message.match(/^(\\w+Error?):/);
-              if (typeMatch) errorType = typeMatch[1];
-            }
-
-            if (lineNumber > 0) {
-              const lines = code.split('\\n');
-              if (lineNumber <= lines.length) lineText = lines[lineNumber - 1].trim();
-            }
-
-            console.error('[Worker] Python execution error:', error);
-
-            self.postMessage({
-              type: 'ERROR',
-              payload: {
-                type: errorType,
-                message: errorMessage,
-                lineno: lineNumber,
-                line_text: lineText
-              },
-              id: executionId
-            });
-          }
-        }
-
-        self.onmessage = async (event) => {
-          const { type, code, stdin, id } = event.data;
-          if (type === 'EXECUTE') {
-            await executePythonCode(code, id, stdin || '');
-          }
-        };
-
-        initializePyodide();
-      `;
-
-      const blob = new Blob([workerCode], { type: 'application/javascript' });
-      const workerUrl = URL.createObjectURL(blob);
-
-      this.worker = new Worker(workerUrl);
-
-      this.worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
-        this.handleWorkerMessage(event.data);
-      };
-
-      this.worker.onerror = (error) => {
-        console.error('[ExecutionService] Worker error:', error);
-        this.handleWorkerError();
-      };
-
-      // Handle worker termination (timeout case from self.close() inside worker)
-      this.worker.addEventListener('close', () => {
-        console.log('[ExecutionService] Worker terminated');
-        this.handleWorkerTimeout();
-      });
-
+      );
     } catch (error) {
       console.error('[ExecutionService] Failed to initialize worker:', error);
     }
@@ -281,9 +121,6 @@ class ExecutionService {
     if (message.type === 'READY') {
       this.isWorkerReady = true;
       console.log('[ExecutionService] Worker is ready');
-      // FIX: Notify all onReady() subscribers immediately.
-      // AppShell's useEffect receives this and calls setWorkerReady(true),
-      // clearing "Initializing..." with zero polling delay.
       this.notifyReadyListeners();
       this.processQueue();
       return;
@@ -308,6 +145,7 @@ class ExecutionService {
       case 'ERROR':
         if (message.id === result.id) {
           result.error = message.payload;
+          result.trace = message.trace;
           result.status = 'error';
           this.completeExecution();
         }
@@ -316,6 +154,7 @@ class ExecutionService {
       case 'DONE':
         if (message.id === result.id) {
           result.executionTime = message.executionTime;
+          result.trace = message.trace;
           result.status = 'completed';
           this.completeExecution();
         }
@@ -364,14 +203,11 @@ class ExecutionService {
 
   private reinitializeWorker() {
     this.isWorkerReady = false;
-    if (this.worker) {
-      this.worker.terminate();
+    if (this.pool) {
+      this.pool.recycleActiveWorker();
     }
     // Reset ready listeners so new subscribers after reinit work correctly
     this.readyListeners = [];
-    setTimeout(() => {
-      this.initializeWorker();
-    }, 100);
   }
 
   private processQueue() {
@@ -402,7 +238,7 @@ class ExecutionService {
       result,
     };
 
-    this.worker?.postMessage({
+    this.pool?.postMessage({
       type: 'EXECUTE',
       code,
       stdin,
@@ -417,9 +253,9 @@ class ExecutionService {
   }
 
   public terminate() {
-    if (this.worker) {
-      this.worker.terminate();
-      this.worker = null;
+    if (this.pool) {
+      this.pool.terminateAll();
+      this.pool = null;
     }
     this.isWorkerReady = false;
     this.currentExecution = null;

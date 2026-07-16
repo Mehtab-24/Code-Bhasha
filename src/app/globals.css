@@ -163,3 +163,25 @@ div[style*="opacity"] {
 .monaco-editor .gr_ {
   display: none !important;
 }
+
+/* Monaco execution tracer highlights */
+.cb-trace-line-highlight {
+  background: rgba(167, 139, 250, 0.15) !important;
+  border-left: 2px solid #a78bfa !important;
+}
+
+.cb-trace-glyph-margin {
+  position: relative;
+}
+
+.cb-trace-glyph-margin::before {
+  content: "→";
+  font-family: monospace;
+  font-weight: bold;
+  color: #a78bfa;
+  font-size: 14px;
+  position: absolute;
+  left: 3px;
+  top: 0px;
+  text-shadow: 0 0 6px rgba(167, 139, 250, 0.8);
+}

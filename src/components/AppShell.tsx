@@ -9,6 +9,7 @@ import { CodeEditor } from './Editor/CodeEditor';
 import { OutputPanel } from './Editor/OutputPanel';
 import { DownloadModal } from './Editor/DownloadModal';
 import { StdinPanel } from './Editor/StdinPanel';
+import { TutorDrawer } from './Tutor/TutorDrawer';
 import { useExecutionStore } from '@/store/useExecutionStore';
 import { getExecutionService } from '@/lib/execution-service';
 
@@ -270,6 +271,11 @@ export function AppShell() {
     };
   }, [setWorkerReady]);
 
+  // Load files from local IndexedDB on startup
+  useEffect(() => {
+    useExecutionStore.getState().loadFilesFromLocalDB();
+  }, []);
+
   const handleRunCode = () => {
     if (!activeFile || !activeFile.content.trim()) return;
     executeCode(activeFile.content);
@@ -345,6 +351,7 @@ export function AppShell() {
       {/* ── Header ────────────────────────────────────────── */}
       <div className="relative z-10">
         <Header />
+        <TutorDrawer />
       </div>
 
       {/* ── Main layout ───────────────────────────────────── */}
