@@ -42,7 +42,7 @@ export function Header({ onOpenAuth, onOpenTutorial }: HeaderProps) {
 
   return (
     <motion.header 
-      className="glass border-b border-glass-border p-4 relative z-40"
+      className="glass-3d gpu-layer border-b border-glass-border p-4 relative z-40"
       initial={{ opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}

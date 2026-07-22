@@ -717,7 +717,7 @@ export function OutputPanel({
 
   return (
     <div
-      className="relative h-full flex flex-col overflow-hidden w-full"
+      className="codebhasha-output-root card-3d-perspective gpu-layer relative h-full flex flex-col overflow-hidden w-full"
       style={{
         background: '#050505',
         border: `1px solid ${isExecuting ? 'rgba(34, 211, 238, 0.2)' : 'rgba(255,255,255,0.07)'}`,

@@ -140,20 +140,89 @@ div[style*="opacity"] {
   touch-action: pan-y;
 }
 
-/* Monaco Editor Fix: Hide internal textareas that Tailwind makes visible */
-.monaco-editor textarea {
-  position: absolute !important;
-  left: -9999px !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
+/* ─── GPU & Compositor Layer Acceleration ────────────────────────────────── */
+.gpu-layer {
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
+/* Pure CSS GPU Keyframe Animations for Smooth Ambient Glows */
+@keyframes floatOrb1 {
+  0%   { transform: translate3d(0px, 0px, 0) scale(1); opacity: 0.14; }
+  33%  { transform: translate3d(30px, -20px, 0) scale(1.08); opacity: 0.20; }
+  66%  { transform: translate3d(-20px, 25px, 0) scale(0.95); opacity: 0.12; }
+  100% { transform: translate3d(0px, 0px, 0) scale(1); opacity: 0.14; }
+}
+
+@keyframes floatOrb2 {
+  0%   { transform: translate3d(0px, 0px, 0) scale(1); opacity: 0.12; }
+  50%  { transform: translate3d(-35px, 30px, 0) scale(1.1); opacity: 0.18; }
+  100% { transform: translate3d(0px, 0px, 0) scale(1); opacity: 0.12; }
+}
+
+.ambient-orb-1 {
+  animation: floatOrb1 18s ease-in-out infinite;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+.ambient-orb-2 {
+  animation: floatOrb2 22s ease-in-out infinite;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* ─── 3D Card Elevation & Perspective Utilities ──────────────────────────── */
+.card-3d-perspective {
+  perspective: 1000px;
+}
+
+.card-3d-container {
+  transform-style: preserve-3d;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease;
+}
+
+.card-3d-container:hover {
+  transform: translateZ(8px) rotateX(0.5deg) rotateY(-0.5deg);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.8), 0 0 30px rgba(34, 211, 238, 0.12);
+}
+
+/* 3D Glassmorphism 2.0 */
+.glass-3d {
+  background: rgba(13, 16, 23, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.glass-3d-neon {
+  background: rgba(13, 16, 23, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(0, 255, 163, 0.25);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 25px rgba(0, 255, 163, 0.15), inset 0 1px 0 rgba(0, 255, 163, 0.2);
+}
+
+/* Sleek 3D Custom Scrollbars */
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: rgba(10, 10, 10, 0.6); }
+::-webkit-scrollbar-thumb { 
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08)); 
+  border-radius: 4px; 
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+::-webkit-scrollbar-thumb:hover { 
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.5), rgba(167, 139, 250, 0.5)); 
+}
+
+/* Monaco Editor Overrides - Hide textarea visually without removing position */
 .monaco-editor textarea.inputarea {
+  opacity: 0 !important;
   background: transparent !important;
-  background-color: transparent !important;
   border: none !important;
   outline: none !important;
-  box-shadow: none !important;
   color: transparent !important;
   caret-color: transparent !important;
 }
@@ -184,4 +253,4 @@ div[style*="opacity"] {
   left: 3px;
   top: 0px;
   text-shadow: 0 0 6px rgba(167, 139, 250, 0.8);
-}
+}

@@ -21,17 +21,17 @@ function AmbientOrb({
   size,
   initialX,
   initialY,
-  duration,
+  className,
 }: {
   color: string;
   size: number;
   initialX: string;
   initialY: string;
-  duration: number;
+  className?: string;
 }) {
   return (
-    <motion.div
-      className="absolute rounded-full pointer-events-none"
+    <div
+      className={`absolute rounded-full pointer-events-none ${className || ''}`}
       style={{
         width: size,
         height: size,
@@ -39,17 +39,7 @@ function AmbientOrb({
         top: initialY,
         background: color,
         filter: 'blur(80px)',
-        opacity: 0.12,
-      }}
-      animate={{
-        x: [0, 30, -20, 10, 0],
-        y: [0, -20, 30, -10, 0],
-        opacity: [0.12, 0.18, 0.10, 0.15, 0.12],
-      }}
-      transition={{
-        duration,
-        repeat: Infinity,
-        ease: 'easeInOut',
+        opacity: 0.14,
       }}
     />
   );
@@ -337,9 +327,9 @@ export function AppShell() {
       <ScanlineOverlay />
 
       {/* ── Ambient background orbs ────────────────────────── */}
-      <AmbientOrb color="radial-gradient(circle, #22d3ee, transparent)" size={500} initialX="10%" initialY="5%" duration={18} />
-      <AmbientOrb color="radial-gradient(circle, #a78bfa, transparent)" size={420} initialX="70%" initialY="60%" duration={24} />
-      <AmbientOrb color="radial-gradient(circle, #00FFA3, transparent)" size={300} initialX="85%" initialY="10%" duration={20} />
+      <AmbientOrb color="radial-gradient(circle, #22d3ee, transparent)" size={500} initialX="10%" initialY="5%" className="ambient-orb-1" />
+      <AmbientOrb color="radial-gradient(circle, #a78bfa, transparent)" size={420} initialX="70%" initialY="60%" className="ambient-orb-2" />
+      <AmbientOrb color="radial-gradient(circle, #00FFA3, transparent)" size={300} initialX="85%" initialY="10%" className="ambient-orb-1" />
 
       {/* ── Grid overlay ──────────────────────────────────── */}
       <div

@@ -426,9 +426,33 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
     // Guard against rare FOUT: re-layout if any font loads after fonts.ready
     const onFontLoad = () => editor.layout();
     document.fonts.addEventListener('loadingdone', onFontLoad);
-    editor.onDidDispose(() => {
-      document.fonts.removeEventListener('loadingdone', onFontLoad);
-    });
+
+    // Wheel event passthrough handler: ensures parent page scrolls when editor is at boundaries or short content
+    const domNode = editor.getDomNode();
+    if (domNode) {
+      const handleWheel = (e: WheelEvent) => {
+        const scrollTop = editor.getScrollTop();
+        const scrollHeight = editor.getScrollHeight();
+        const layoutHeight = editor.getLayoutInfo().height;
+        const isAtTop = scrollTop <= 0;
+        const isAtBottom = scrollTop + layoutHeight >= scrollHeight - 2;
+        const isContentShort = scrollHeight <= layoutHeight;
+
+        if (isContentShort || (isAtTop && e.deltaY < 0) || (isAtBottom && e.deltaY > 0)) {
+          window.scrollBy({ top: e.deltaY, behavior: 'auto' });
+        }
+      };
+
+      domNode.addEventListener('wheel', handleWheel, { passive: true });
+      editor.onDidDispose(() => {
+        document.fonts.removeEventListener('loadingdone', onFontLoad);
+        domNode.removeEventListener('wheel', handleWheel);
+      });
+    } else {
+      editor.onDidDispose(() => {
+        document.fonts.removeEventListener('loadingdone', onFontLoad);
+      });
+    }
 
     setIsEditorMounted(true);
   };
@@ -455,10 +479,10 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
     //
     // Monaco only ever sees the inner div and gets correct measurements.
     <div
-      className="codebhasha-editor-root w-full flex flex-col"
+      className="codebhasha-editor-root card-3d-perspective w-full flex flex-col"
       style={{
         background: '#0d0d0d',
-        border: '1px solid rgba(255,255,255,0.07)',
+        border: '1px solid rgba(255,255,255,0.08)',
         borderRadius: 12,
         overflow: 'hidden',
         boxShadow: '0 24px 60px rgba(0,0,0,0.7), 0 8px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)',
@@ -667,7 +691,7 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
             roundedSelection: false,
             readOnly: false,
             cursorStyle: 'line',
-            mouseWheelZoom: true,
+            mouseWheelZoom: false,
             glyphMargin: false,
             folding: false,
             lineDecorationsWidth: 10,
@@ -680,6 +704,8 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
               horizontal: 'auto',
               verticalScrollbarSize: 8,
               horizontalScrollbarSize: 8,
+              alwaysConsumeMouseWheel: false,
+              handleMouseWheel: true,
             },
           }}
           loading={null}
