@@ -506,15 +506,22 @@ function TabButton({
   return (
     <motion.button
       onClick={onClick}
-      className="relative flex items-center gap-1.5 px-4 py-2.5 text-xs font-mono tracking-widest uppercase transition-colors duration-200"
+      className="relative flex items-center gap-2 px-4 py-3 text-xs font-mono font-medium tracking-wide transition-all duration-200 cursor-pointer rounded-t-lg select-none"
       style={{
-        color: isActive ? activeColor : 'rgba(255,255,255,0.25)',
-        borderBottom: `1px solid ${isActive ? activeColor : 'transparent'}`,
+        color: isActive ? activeColor : 'rgba(255,255,255,0.45)',
+        background: isActive
+          ? `rgba(${activeColor === '#4ade80' ? '74,222,128' : activeColor === '#f87171' ? '248,113,113' : '167,139,250'}, 0.08)`
+          : 'transparent',
+        borderBottom: `2px solid ${isActive ? activeColor : 'transparent'}`,
       }}
-      whileHover={{ color: isActive ? activeColor : 'rgba(255,255,255,0.5)' }}
+      whileHover={{
+        color: isActive ? activeColor : 'rgba(255,255,255,0.85)',
+        background: isActive ? undefined : 'rgba(255,255,255,0.03)',
+      }}
+      whileTap={{ scale: 0.97 }}
     >
-      <Icon className="w-3.5 h-3.5" />
-      {label}
+      <Icon className="w-4 h-4 shrink-0" />
+      <span className="font-semibold">{label}</span>
       {badge}
     </motion.button>
   );
@@ -732,7 +739,7 @@ export function OutputPanel({
 
       {/* ── Tab bar ───────────────────────────────────────── */}
       <div
-        className="relative z-10 flex items-center shrink-0"
+        className="relative z-10 flex items-center shrink-0 overflow-x-auto scrollbar-hide"
         style={{
           borderBottom: '1px solid rgba(255,255,255,0.06)',
           background: 'rgba(0,0,0,0.6)',
@@ -749,7 +756,7 @@ export function OutputPanel({
             executionTime != null && !isExecuting ? (
               <span
                 className="ml-1 text-xs font-mono"
-                style={{ color: 'rgba(74,222,128,0.4)', fontSize: 10 }}
+                style={{ color: 'rgba(74,222,128,0.6)', fontSize: 10 }}
               >
                 {executionTime}ms
               </span>
@@ -761,13 +768,13 @@ export function OutputPanel({
           activeTab={activeTab}
           onClick={() => setActiveTab('debugger')}
           icon={Bug}
-          label="Debugger"
+          label="Desi Debugger"
           activeColor="#f87171"
           badge={
             error ? (
               <motion.div
-                className="w-1.5 h-1.5 rounded-full ml-1"
-                style={{ background: '#f87171', boxShadow: '0 0 5px rgba(248,113,113,0.8)' }}
+                className="w-2 h-2 rounded-full ml-1"
+                style={{ background: '#f87171', boxShadow: '0 0 6px rgba(248,113,113,0.9)' }}
                 animate={{ opacity: [1, 0.3, 1] }}
                 transition={{ duration: 1.2, repeat: Infinity }}
               />
@@ -784,10 +791,10 @@ export function OutputPanel({
         />
 
         {/* Spacer + right-aligned system label */}
-        <div className="flex-1" />
+        <div className="flex-1 min-w-[20px]" />
         <span
-          className="pr-4 font-mono select-none"
-          style={{ fontSize: 9, color: 'rgba(255,255,255,0.1)', letterSpacing: '0.18em' }}
+          className="pr-4 font-mono select-none hidden sm:inline"
+          style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.18em' }}
         >
           SYSTEM OUTPUT
         </span>

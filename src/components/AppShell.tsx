@@ -464,8 +464,8 @@ export function AppShell() {
           variants={itemVariants}
           className="flex flex-col"
           style={{
-            height: '30vh',
-            minHeight: '200px',
+            height: '360px',
+            minHeight: '320px',
           }}
         >
           <OutputPanel
