@@ -2,7 +2,7 @@
 
 import { Editor } from '@monaco-editor/react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import type { Monaco } from '@monaco-editor/react';
 import type * as monacoEditor from 'monaco-editor';
 import { useExecutionStore } from '@/store/useExecutionStore';
@@ -214,7 +214,7 @@ function FileTab({
 function EditorLoadingState() {
   const lines = [60, 85, 45, 70, 90, 38, 65, 78, 52, 83];
   return (
-    <div className="flex flex-col gap-3 p-6 h-full" style={{ background: '#0d0d0d' }}>
+    <div className="flex flex-col gap-3 p-6 h-full" style={{ background: '#0a0d13' }}>
       {lines.map((width, i) => (
         <motion.div key={i} className="flex items-center gap-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }}>
           <div className="w-6 h-3 rounded shrink-0" style={{ background: 'rgba(255,255,255,0.06)' }} />
@@ -258,7 +258,9 @@ function CharCounter({ value }: { value: string }) {
 }
 
 // ─── Main CodeEditor ───────────────────────────────────────────────────────────
-export function CodeEditor({ value, onChange }: CodeEditorProps) {
+// memo'd so Monaco only re-renders when its own value/onChange actually change —
+// not when parent studio state (dock tabs, run status, palette) updates.
+function CodeEditorComponent({ value, onChange }: CodeEditorProps) {
   const [isEditorMounted, setIsEditorMounted] = useState(false);
   const editorRef = useRef<monacoEditor.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<any>(null);
@@ -350,47 +352,76 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
     editorRef.current.revealLineInCenterIfOutsideViewport(line);
   }, [currentTraceIndex, traceSteps]);
 
+  // ── Presentation: emerald flash for "Apply Fix" / "Format" actions ──
+  // Other components dispatch 'codebhasha:highlight-line' with a line range;
+  // this paints a temporary decoration and reveals it. Purely visual — no
+  // interaction with the execution or generation pipelines.
+  const fixDecorationsRef = useRef<string[]>([]);
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ startLine?: number; endLine?: number }>).detail;
+      const editor = editorRef.current;
+      const monaco = monacoRef.current;
+      if (!editor || !monaco || !detail?.startLine) return;
+      const endLine = Math.max(detail.startLine, detail.endLine ?? detail.startLine);
+      fixDecorationsRef.current = editor.deltaDecorations(fixDecorationsRef.current, [
+        {
+          range: new monaco.Range(detail.startLine, 1, endLine, 1),
+          options: { isWholeLine: true, className: 'cb-fix-flash' },
+        },
+      ]);
+      editor.revealLinesInCenterIfOutsideViewport(detail.startLine, endLine);
+      setTimeout(() => {
+        if (editorRef.current) {
+          fixDecorationsRef.current = editorRef.current.deltaDecorations(fixDecorationsRef.current, []);
+        }
+      }, 2000);
+    };
+    window.addEventListener('codebhasha:highlight-line', handler);
+    return () => window.removeEventListener('codebhasha:highlight-line', handler);
+  }, []);
+
   const handleEditorMount = async (
     editor: monacoEditor.editor.IStandaloneCodeEditor,
     monaco: Monaco
   ) => {
     editorRef.current = editor;
 
-    // Theme definition (unchanged from original)
+    // Theme definition — obsidian palette aligned with the studio brand
     monaco.editor.defineTheme('codebhasha-dark', {
       base: 'vs-dark',
       inherit: true,
       rules: [
-        { token: '',          foreground: 'd4d4d4' },
-        { token: 'comment',   foreground: '6a9955', fontStyle: 'italic' },
-        { token: 'keyword',   foreground: '569cd6', fontStyle: 'bold' },
-        { token: 'string',    foreground: 'ce9178' },
-        { token: 'number',    foreground: 'b5cea8' },
-        { token: 'type',      foreground: '4ec9b0' },
-        { token: 'function',  foreground: 'dcdcaa' },
-        { token: 'variable',  foreground: '9cdcfe' },
-        { token: 'operator',  foreground: 'd4d4d4' },
-        { token: 'delimiter', foreground: 'd4d4d4' },
+        { token: '',          foreground: 'd6dce8' },
+        { token: 'comment',   foreground: '556074', fontStyle: 'italic' },
+        { token: 'keyword',   foreground: 'c4b5fd', fontStyle: 'bold' },
+        { token: 'string',    foreground: '6ee7b7' },
+        { token: 'number',    foreground: 'fbbf24' },
+        { token: 'type',      foreground: '5eead4' },
+        { token: 'function',  foreground: '67e8f9' },
+        { token: 'variable',  foreground: '93c5fd' },
+        { token: 'operator',  foreground: '9aa5b8' },
+        { token: 'delimiter', foreground: '9aa5b8' },
       ],
       colors: {
-        'editor.background':                   '#0d0d0d',
-        'editor.foreground':                   '#d4d4d4',
+        'editor.background':                   '#0a0d13',
+        'editor.foreground':                   '#d6dce8',
         'editorCursor.foreground':             '#22d3ee',
-        'editor.selectionBackground':          '#264f7866',
+        'editor.selectionBackground':          '#1c4a5e66',
         'editor.inactiveSelectionBackground':  '#3a3d4166',
-        'editor.lineHighlightBackground':      '#ffffff0d',
+        'editor.lineHighlightBackground':      '#ffffff08',
         'editor.lineHighlightBorder':          '#ffffff00',
-        'editorLineNumber.foreground':         '#3d3d3d',
-        'editorLineNumber.activeForeground':   '#858585',
-        'scrollbarSlider.background':          '#424242aa',
-        'scrollbarSlider.hoverBackground':     '#616161aa',
-        'scrollbarSlider.activeBackground':    '#757575aa',
-        'editorWidget.background':             '#1a1a1a',
-        'editorWidget.border':                 '#303030',
+        'editorLineNumber.foreground':         '#333b4a',
+        'editorLineNumber.activeForeground':   '#7d8aa0',
+        'scrollbarSlider.background':          '#39415aaa',
+        'scrollbarSlider.hoverBackground':     '#4d5870aa',
+        'scrollbarSlider.activeBackground':    '#5d6a86aa',
+        'editorWidget.background':             '#11141c',
+        'editorWidget.border':                 '#2a3040',
         'editorFind.matchBackground':          '#22d3ee33',
         'editorFind.matchHighlightBackground': '#22d3ee22',
-        'editorIndentGuide.background1':       '#2a2a2a',
-        'editorIndentGuide.activeBackground1': '#404040',
+        'editorIndentGuide.background1':       '#232937',
+        'editorIndentGuide.activeBackground1': '#39435a',
       },
     });
     monaco.editor.setTheme('codebhasha-dark');
@@ -427,32 +458,11 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
     const onFontLoad = () => editor.layout();
     document.fonts.addEventListener('loadingdone', onFontLoad);
 
-    // Wheel event passthrough handler: ensures parent page scrolls when editor is at boundaries or short content
-    const domNode = editor.getDomNode();
-    if (domNode) {
-      const handleWheel = (e: WheelEvent) => {
-        const scrollTop = editor.getScrollTop();
-        const scrollHeight = editor.getScrollHeight();
-        const layoutHeight = editor.getLayoutInfo().height;
-        const isAtTop = scrollTop <= 0;
-        const isAtBottom = scrollTop + layoutHeight >= scrollHeight - 2;
-        const isContentShort = scrollHeight <= layoutHeight;
-
-        if (isContentShort || (isAtTop && e.deltaY < 0) || (isAtBottom && e.deltaY > 0)) {
-          window.scrollBy({ top: e.deltaY, behavior: 'auto' });
-        }
-      };
-
-      domNode.addEventListener('wheel', handleWheel, { passive: true });
-      editor.onDidDispose(() => {
-        document.fonts.removeEventListener('loadingdone', onFontLoad);
-        domNode.removeEventListener('wheel', handleWheel);
-      });
-    } else {
-      editor.onDidDispose(() => {
-        document.fonts.removeEventListener('loadingdone', onFontLoad);
-      });
-    }
+    // The studio is a fixed 100vh workspace — the document never scrolls, so
+    // no wheel passthrough is needed; Monaco consumes wheel events itself.
+    editor.onDidDispose(() => {
+      document.fonts.removeEventListener('loadingdone', onFontLoad);
+    });
 
     setIsEditorMounted(true);
   };
@@ -479,9 +489,9 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
     //
     // Monaco only ever sees the inner div and gets correct measurements.
     <div
-      className="codebhasha-editor-root card-3d-perspective w-full flex flex-col"
+      className="codebhasha-editor-root card-3d-perspective w-full h-full min-h-0 flex flex-col"
       style={{
-        background: '#0d0d0d',
+        background: '#0a0d13',
         border: '1px solid rgba(255,255,255,0.08)',
         borderRadius: 12,
         overflow: 'hidden',
@@ -634,11 +644,12 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
       </div>
 
       {/* ── Monaco mount zone ─────────────────────────────────────────────
-       *  Rules: explicit height only. NO border, NO radius, NO overflow,
+       *  Rules: fluid height only. NO border, NO radius, NO overflow,
        *  NO box-shadow, NO padding. Anything visual here shifts Monaco's
        *  content-area origin and causes gutter/cursor misalignment.
+       *  flex-1 + min-h-0 lets the studio split pane drive the height.
        * ────────────────────────────────────────────────────────────────── */}
-      <div className="relative w-full h-[450px]">
+      <div className="relative w-full flex-1 min-h-[160px]">
         <AnimatePresence>
           {!isEditorMounted && (
             <motion.div
@@ -664,7 +675,7 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
             // fontFamily unchanged — JetBrains Mono is now guaranteed loaded
             // before Monaco measures (see FIX B). The fallback chain is kept
             // for offline/strict-CSP environments.
-            fontFamily: "'JetBrains Mono', 'Cascadia Code', Consolas, 'Courier New', monospace",
+            fontFamily: "'JetBrains Mono', 'Geist Mono', 'Cascadia Code', Consolas, 'Courier New', monospace",
             fontSize: 14,
             // Explicit lineHeight prevents Monaco from inferring it differently
             // on retina vs non-retina screens. 22px = comfortable 1.57x ratio
@@ -717,7 +728,7 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
             <motion.div
               className="absolute right-0 top-0 bottom-0 w-72 z-20 flex flex-col border-l"
               style={{
-                background: 'rgba(13,13,13,0.98)',
+                background: 'rgba(10,13,19,0.98)',
                 borderColor: 'rgba(255,255,255,0.08)',
               }}
               initial={{ x: '100%' }}
@@ -791,7 +802,7 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
             <motion.div
               className="absolute right-0 top-0 bottom-0 w-full max-w-sm sm:max-w-md z-20 flex flex-col border-l"
               style={{
-                background: 'rgba(10,10,10,0.98)',
+                background: 'rgba(9,11,16,0.98)',
                 borderColor: 'rgba(255,255,255,0.08)',
               }}
               initial={{ x: '100%' }}
@@ -919,20 +930,24 @@ export function CodeEditor({ value, onChange }: CodeEditorProps) {
 
       {/* ── Status bar ────────────────────────────────────── */}
       <div
-        className="shrink-0 flex items-center justify-between px-4 h-6"
+        className="shrink-0 flex items-center justify-between px-4 h-7"
         style={{ background: 'rgba(0,0,0,0.6)', borderTop: '1px solid rgba(255,255,255,0.04)' }}
       >
-        <div className="flex items-center gap-3">
-          <span className="font-mono select-none" style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.12em' }}>Python 3</span>
-          <span className="font-mono select-none" style={{ fontSize: 10, color: 'rgba(255,255,255,0.1)', letterSpacing: '0.1em' }}>UTF-8</span>
+        <div className="flex items-center gap-3.5">
+          <span className="font-mono text-[11px] text-slate-400 tabular-nums tracking-wide select-none">Python 3</span>
+          <span className="font-mono text-[11px] text-slate-500 tabular-nums tracking-wide select-none">UTF-8</span>
           <div className="w-px h-3 shrink-0" style={{ background: 'rgba(255,255,255,0.06)' }} />
-          <span className="font-mono select-none flex items-center gap-1.5" style={{ fontSize: 10, color: isSaving ? 'rgba(167,139,250,0.6)' : 'rgba(34,211,238,0.5)' }}>
+          <span className="font-mono text-[11px] text-slate-400 tabular-nums tracking-wide flex items-center gap-1.5 select-none" style={{ color: isSaving ? 'rgba(167,139,250,0.75)' : undefined }}>
             <span className={`w-1.5 h-1.5 rounded-full ${isSaving ? 'bg-purple-400 animate-pulse' : 'bg-cyan-400'}`} style={{ boxShadow: isSaving ? '0 0 6px #a78bfa' : '0 0 6px #22d3ee' }} />
-            {isSaving ? 'Auto-saving...' : 'Saved to browser'}
+            <span style={{ color: isSaving ? 'rgba(167,139,250,0.75)' : 'rgba(96,165,250,0.75)' }}>
+              {isSaving ? 'Auto-saving...' : 'Saved to browser'}
+            </span>
           </span>
         </div>
-        <span className="font-mono select-none" style={{ fontSize: 10, color: 'rgba(255,255,255,0.15)', letterSpacing: '0.1em' }}>Spaces: 4</span>
+        <span className="font-mono text-[11px] text-slate-400 tabular-nums tracking-wide select-none">Spaces: 4</span>
       </div>
     </div>
   );
 }
+// Prevent Monaco re-renders from unrelated parent state updates
+export const CodeEditor = memo(CodeEditorComponent);

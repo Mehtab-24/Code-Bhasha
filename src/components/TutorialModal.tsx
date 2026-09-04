@@ -16,12 +16,13 @@ export function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Backdrop */}
+          {/* Backdrop — plain dim, no blur filter (keeps scrolling inside smooth) */}
           <motion.div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999]"
+            className="fixed inset-0 bg-black/70 z-[9999]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
             onClick={onClose}
           />
 
@@ -30,14 +31,14 @@ export function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
             <motion.div
               className="w-full max-w-2xl rounded-2xl overflow-hidden pointer-events-auto"
               style={{
-                background: 'rgba(13,13,13,0.95)',
+                background: 'rgba(13,13,13,0.98)',
                 border: '1px solid rgba(255,255,255,0.1)',
-                boxShadow: '0 24px 60px rgba(0,0,0,0.8), 0 0 80px rgba(34,211,238,0.15)',
+                boxShadow: '0 24px 60px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
               }}
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              initial={{ opacity: 0, scale: 0.97, y: 14 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              exit={{ opacity: 0, scale: 0.97, y: 14 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
@@ -65,22 +66,15 @@ export function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
                 </motion.button>
 
                 <div className="flex items-center gap-3 mb-2">
-                  <motion.div
+                  <div
                     className="w-12 h-12 rounded-xl flex items-center justify-center"
                     style={{
                       background: 'linear-gradient(135deg, #22d3ee, #a78bfa)',
+                      boxShadow: '0 0 20px rgba(34,211,238,0.25)',
                     }}
-                    animate={{
-                      boxShadow: [
-                        '0 0 20px rgba(34,211,238,0.3)',
-                        '0 0 30px rgba(167,139,250,0.4)',
-                        '0 0 20px rgba(34,211,238,0.3)',
-                      ],
-                    }}
-                    transition={{ duration: 2, repeat: Infinity }}
                   >
                     <span className="text-2xl">🚀</span>
-                  </motion.div>
+                  </div>
                   <div>
                     <h2 className="text-2xl font-bold text-white">
                       Welcome to CodeBhasha
@@ -92,8 +86,11 @@ export function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
                 </div>
               </div>
 
-              {/* Content */}
-              <div className="px-6 py-6 space-y-6 max-h-[60vh] overflow-y-auto">
+              {/* Content — contained wheel scroll, no chaining behind the modal */}
+              <div
+                className="px-6 py-6 space-y-6 max-h-[60vh] overflow-y-auto"
+                style={{ overscrollBehavior: 'contain' }}
+              >
                 {/* Step 1 */}
                 <motion.div
                   className="flex gap-4"

@@ -22,15 +22,27 @@ const VoiceToCodeSchema = z.object({
 });
 
 export async function POST(req: Request) {
-  try {
-    if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY) {
-      console.error("❌ CRITICAL: Missing Bedrock Environment Variables!");
-      return NextResponse.json(
-        { error: "Server misconfiguration: Missing Bedrock credentials", message: "Server configuration mein problem hai. Admin ko batao." },
-        { status: 500 }
-      );
-    }
+  // ── [Bedrock Debug] environment sanity check ──
+  console.log("[Bedrock Debug] Checking credentials:", {
+    hasKeyId: !!(process.env.BEDROCK_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID),
+    keyIdPrefix: (process.env.BEDROCK_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID)
+      ? (process.env.BEDROCK_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID)!.substring(0, 4)
+      : "MISSING",
+    hasSecret: !!(process.env.BEDROCK_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY),
+    region: process.env.BEDROCK_AWS_REGION || process.env.AWS_REGION || "MISSING",
+    modelId: process.env.BEDROCK_MODEL_ID || "amazon.nova-micro-v1:0 (built-in default)",
+  });
 
+  const hasKeyId = !!(process.env.BEDROCK_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID);
+  const hasSecret = !!(process.env.BEDROCK_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY);
+  if (!hasKeyId || !hasSecret) {
+    return NextResponse.json(
+      { error: "Environment variables missing on server.", missing: { hasKeyId, hasSecret } },
+      { status: 500 }
+    );
+  }
+
+  try {
     const body = await req.json();
     const { text } = VoiceToCodeSchema.parse(body);
     const transcript = text.trim();
@@ -43,13 +55,9 @@ export async function POST(req: Request) {
     }
 
     const systemPrompt = `You are a Python code generator for Indian students learning to code.
-Your job is to convert Hinglish (Hindi + English) voice commands into clean, executable Python code.
+Your job is to convert Hinglish (Hindi + English) voice commands into clean, executable Python 3 code.
 
-You MUST output the response in this exact format, replacing the text in brackets with your output. DO NOT use markdown code blocks or brackets in your response:
----CODE---
-[Your Python 3 code here. Add inline comments in Hinglish to explain what each line does. Keep the code simple and beginner-friendly.]
----EXPLANATION---
-[Brief Hinglish explanation explaining what the code does overall.]`;
+Return ONLY executable Python code. Brief inline code comments in Hinglish (starting with #) are allowed, but NEVER output multi-line string blocks, markdown fences, or verbose sections labeled '---EXPLANATION---' or similar. Do not restate the task, add headings, or explain the code outside of # comments.`;
 
     const userPrompt = `Convert this Hinglish command to Python code:\n\n"${transcript}"`;
 
@@ -76,7 +84,22 @@ You MUST output the response in this exact format, replacing the text in bracket
       body: JSON.stringify(payload),
     });
 
-    const response = await bedrockClient.send(command);
+    let response;
+    try {
+      response = await bedrockClient.send(command);
+    } catch (err) {
+      // Unmask the raw SDK error so throttling/credentials issues are visible
+      console.error("[Bedrock SDK Raw Error]:", err);
+      const sdkErr = err as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
+      return NextResponse.json(
+        {
+          error: sdkErr?.name || "BedrockError",
+          details: sdkErr?.message,
+          code: sdkErr?.$metadata?.httpStatusCode,
+        },
+        { status: 500 }
+      );
+    }
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -88,7 +111,7 @@ You MUST output the response in this exact format, replacing the text in bracket
         const parser = new DelimiterStreamParser([
           { tag: '---CODE---', field: 'code' },
           { tag: '---EXPLANATION---', field: 'explanation' }
-        ]);
+        ], 'code');
         const encoder = new TextEncoder();
 
         try {
@@ -111,7 +134,11 @@ You MUST output the response in this exact format, replacing the text in bracket
           }
         } catch (streamError) {
           console.error("Voice-to-code stream reading error:", streamError);
-          controller.enqueue(encoder.encode(JSON.stringify({ field: 'error', text: 'Stream reading failed' }) + '\n'));
+          const streamErr = streamError as { name?: string; message?: string };
+          controller.enqueue(encoder.encode(JSON.stringify({
+            field: 'error',
+            text: `Stream failure — ${streamErr?.name || 'Error'}: ${streamErr?.message || 'unknown'}`
+          }) + '\n'));
         } finally {
           controller.close();
         }
@@ -127,15 +154,21 @@ You MUST output the response in this exact format, replacing the text in bracket
     });
 
   } catch (err) {
-    console.error('🚨 VOICE-TO-CODE BEDROCK ERROR 🚨', err);
+    // Unmask the raw error — no more generic "kuch problem ho gayi" 500s
+    console.error('[Bedrock SDK Raw Error]:', err);
     if (err instanceof z.ZodError) {
       return NextResponse.json(
         { error: 'Invalid input', details: err.issues },
         { status: 400 }
       );
     }
+    const anyErr = err as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
     return NextResponse.json(
-      { error: 'Voice-to-code failed', message: 'Bhai, kuch problem ho gayi. Dobara try karo.' },
+      {
+        error: anyErr?.name || "BedrockError",
+        details: anyErr?.message || 'Voice-to-code failed',
+        code: anyErr?.$metadata?.httpStatusCode,
+      },
       { status: 500 }
     );
   }

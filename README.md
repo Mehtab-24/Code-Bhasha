@@ -71,22 +71,34 @@ And yes, the UI auto-switches to the **Debugger** tab so you don’t have to hun
 ```txt
 src/
   app/
+    page.tsx             # Marketing landing (/) — hero + live micro-demo
+    app/
+      layout.tsx         # Studio route layout (route-scoped body scroll lock)
+      page.tsx           # /app — fixed-100vh developer studio
     api/
       debug/route.ts      # Bedrock-powered Hinglish error explanations
     layout.tsx
-    page.tsx
     globals.css
   components/
-    AppShell.tsx          # Main UI: tabs, run/clear, output/debugger, etc.
-    Header.tsx
-    TutorialModal.tsx
+    Landing/
+      LandingPage.tsx     # Landing: nav, hero, CTAs, ⌘K / Enter shortcut
+      MicroDemo.tsx       # Auto-playing Hinglish → Python demo card
+    Studio/
+      StudioShell.tsx     # Composition root: header + split pane + overlays
+      StudioHeader.tsx    # Compact top bar: identity, session, tutor, help
+      AiStudio.tsx        # Left column: Bolo/Likho, prompt shelf, generation log
+      RadialVisualizer.tsx# SVG radial mic visualizer (Web Audio analyser)
+      EditorPane.tsx      # Right column: editor, control strip, terminal dock
+      TerminalDock.tsx    # Output / Desi Debugger / Stdin / Tracer tabs
+      SplitPane.tsx       # Resizable two-pane layout (columns ↔ rows)
+      BodyScrollLock.tsx  # Route-scoped overflow lock
     Editor/
       CodeEditor.tsx
-      OutputPanel.tsx
-      DownloadModal.tsx
-      StdinPanel.tsx
-    Voice/
-      VoicePanel.tsx
+      TracerPanel.tsx
+    AuthModal.tsx
+    TutorialModal.tsx
+    Tutor/
+      TutorDrawer.tsx
   lib/
     execution-service.ts  # Worker lifecycle, queue, READY event
     pyodide-worker.ts     # (Reference worker) Execution + error parsing

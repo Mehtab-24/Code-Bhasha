@@ -2,6 +2,7 @@ import { StateCreator } from 'zustand';
 import type { VoiceSlice, RootState, VoiceResult } from '../types';
 import { sha256 } from '@/lib/crypto';
 import { idbCache } from '@/lib/idb-cache';
+import { sanitizeGeneratedCode } from '@/lib/sanitize-code';
 
 const voiceInflightRequests = new Map<string, Promise<VoiceResult>>();
 
@@ -35,11 +36,24 @@ export const createVoiceSlice: StateCreator<RootState, [], [], VoiceSlice> = (se
     const cached = await idbCache.get<VoiceResult>(hash);
     if (cached) {
       console.log('[Cache] Hit for voice generator:', hash);
-      set({
+      // Older cache entries may predate the sanitation guard — clean on read.
+      const cleanCached: VoiceResult = {
+        ...cached,
+        code: sanitizeGeneratedCode(cached.code ?? '').code,
+      };
+      // Same injection contract as the stream path: the sanitized code
+      // replaces the active file's content.
+      set((state) => ({
         isGeneratingCode: false,
-        voiceResult: cached
-      });
-      return cached;
+        voiceResult: cleanCached,
+        files:
+          cleanCached.code.trim() && state.activeFileId
+            ? state.files.map((f) =>
+                f.id === state.activeFileId ? { ...f, content: cleanCached.code } : f
+              )
+            : state.files,
+      }));
+      return cleanCached;
     }
 
     // 2. Check if there is an in-flight request for the same transcript
@@ -77,7 +91,17 @@ export const createVoiceSlice: StateCreator<RootState, [], [], VoiceSlice> = (se
       });
 
       if (!response.ok) {
-        throw new Error('Voice-to-code failed');
+        // Surface the server's unmasked Bedrock diagnostic instead of a
+        // generic message — the red banner shows the actual root cause.
+        let diagnostic = `HTTP ${response.status}`;
+        try {
+          const data = await response.json();
+          const parts = [data?.error, data?.details, data?.code ? `HTTP ${data.code}` : null].filter(Boolean);
+          if (parts.length) diagnostic = parts.join(' · ');
+        } catch {
+          // non-JSON error body — keep the HTTP status line
+        }
+        throw new Error(diagnostic);
       }
 
       const reader = response.body?.getReader();
@@ -89,6 +113,10 @@ export const createVoiceSlice: StateCreator<RootState, [], [], VoiceSlice> = (se
         code: '',
         explanation: ''
       };
+
+      // Once the model drifts past its code into verbose prose, every later
+      // 'code' chunk is explanation text — stop feeding it to the buffer.
+      let codeClosed = false;
 
       if (reader) {
         while (true) {
@@ -115,11 +143,22 @@ export const createVoiceSlice: StateCreator<RootState, [], [], VoiceSlice> = (se
                 let files = state.files;
                 
                 if (parsed.field === 'code') {
-                  code += parsed.text;
-                  if (state.activeFileId) {
-                    files = state.files.map((f) =>
-                      f.id === state.activeFileId ? { ...f, content: code } : f
-                    );
+                  if (codeClosed) {
+                    explanation += parsed.text;
+                  } else {
+                    // Sanitation guard: only pure executable Python reaches
+                    // the editor buffer (no markers, fences, or prose).
+                    const sanitized = sanitizeGeneratedCode(code + parsed.text);
+                    code = sanitized.code;
+                    if (sanitized.truncated) {
+                      codeClosed = true;
+                      explanation += sanitized.remainder;
+                    }
+                    if (state.activeFileId) {
+                      files = state.files.map((f) =>
+                        f.id === state.activeFileId ? { ...f, content: code } : f
+                      );
+                    }
                   }
                 } else if (parsed.field === 'explanation') {
                   explanation += parsed.text;
@@ -143,8 +182,11 @@ export const createVoiceSlice: StateCreator<RootState, [], [], VoiceSlice> = (se
         }
       }
 
-      // Write complete result to cache
-      await idbCache.set(hash, finalResult);
+      // Write complete result to cache — but never cache an empty response:
+      // a transient Bedrock hiccup must not poison future generations.
+      if (finalResult.code.trim()) {
+        await idbCache.set(hash, finalResult);
+      }
       return finalResult;
     })();
 
@@ -191,13 +233,17 @@ export const createVoiceSlice: StateCreator<RootState, [], [], VoiceSlice> = (se
       }
 
       const result = await response.json();
+      const cleanResult: VoiceResult = {
+        ...result,
+        code: sanitizeGeneratedCode(result.code ?? '').code,
+      };
       set({ 
-        voiceResult: result,
-        transcript: result.transcript,
+        voiceResult: cleanResult,
+        transcript: cleanResult.transcript,
         isGeneratingCode: false 
       });
       
-      return result;
+      return cleanResult;
     } catch (err) {
       console.error('Failed to generate code from audio:', err);
       set({ isGeneratingCode: false });

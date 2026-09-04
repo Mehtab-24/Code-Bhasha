@@ -19,12 +19,10 @@ export function TutorDrawer() {
   const [inputVal, setInputVal] = useState('');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll to bottom on new message load
+  // Auto-scroll to bottom when a new message arrives
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [tutorMessages, isTutorOpen]);
-
-  if (!isTutorOpen) return null;
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [tutorMessages]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,28 +40,30 @@ export function TutorDrawer() {
 
   return createPortal(
     <AnimatePresence>
-      <div 
-        className="fixed inset-0 flex justify-end pointer-events-none"
-        style={{ zIndex: 99999 }}
-      >
-        {/* Backdrop overlay */}
-        <motion.div
-          className="absolute inset-0 bg-black/40 pointer-events-auto backdrop-blur-xs"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={() => setTutorOpen(false)}
-        />
-
-        {/* Drawer Sheet */}
-        <motion.div
-          className="relative w-full max-w-md sm:max-w-lg h-full flex flex-col pointer-events-auto border-l border-glass-border shadow-2xl"
-          initial={{ x: '100%' }}
-          animate={{ x: 0 }}
-          exit={{ x: '100%' }}
-          transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-          style={{ background: 'rgba(10, 10, 10, 0.98)' }}
+      {isTutorOpen && (
+        <div
+          className="fixed inset-0 flex justify-end pointer-events-none"
+          style={{ zIndex: 99999 }}
         >
+          {/* Backdrop overlay — plain dim, no blur filter (keeps compositing cheap) */}
+          <motion.div
+            className="absolute inset-0 bg-black/50 pointer-events-auto"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setTutorOpen(false)}
+          />
+
+          {/* Drawer Sheet */}
+          <motion.div
+            className="relative w-full max-w-md sm:max-w-lg h-full flex flex-col pointer-events-auto border-l border-glass-border shadow-2xl"
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            style={{ background: 'rgba(10, 10, 10, 0.98)', willChange: 'transform', transform: 'translateZ(0)' }}
+          >
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-glass-border bg-black/40">
             <div className="flex items-center gap-2">
@@ -117,8 +117,11 @@ export function TutorDrawer() {
             </button>
           </div>
 
-          {/* Messages Log */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+          {/* Messages Log — contained scroll, no chaining into the studio */}
+          <div
+            className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin"
+            style={{ overscrollBehavior: 'contain' }}
+          >
             {tutorMessages.map((msg) => (
               <div
                 key={msg.id}
@@ -190,7 +193,8 @@ export function TutorDrawer() {
             </div>
           </form>
         </motion.div>
-      </div>
+        </div>
+      )}
     </AnimatePresence>,
     document.body
   );

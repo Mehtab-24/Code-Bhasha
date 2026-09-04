@@ -4,11 +4,17 @@
  */
 export class DelimiterStreamParser {
   private buffer = "";
-  private currentField: string | null = null;
+  private currentField: string | null;
   private headers: Array<{ tag: string; field: string }>;
 
-  constructor(headers: Array<{ tag: string; field: string }>) {
+  /**
+   * @param initialField field for text that arrives before any header tag.
+   * Defaults to null (text before the first header is dropped) to preserve the
+   * section-delimited protocol; pass 'code' for code-first responses.
+   */
+  constructor(headers: Array<{ tag: string; field: string }>, initialField: string | null = null) {
     this.headers = headers;
+    this.currentField = initialField;
   }
 
   public push(chunk: string): Array<{ field: string; text: string }> {
