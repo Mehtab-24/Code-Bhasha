@@ -142,7 +142,7 @@ export function StudioShell() {
 
   const handleResetWorkspace = useCallback(() => {
     const state = useExecutionStore.getState();
-    state.updateFileContent(state.activeFileId, '# Yahan apna Python code likho\n');
+    state.updateFileContent(state.activeFileId, '# Start coding in Python or speak your logic...\n');
     state.clearOutput();
     showToast('Workspace reset ho gaya');
   }, [showToast]);

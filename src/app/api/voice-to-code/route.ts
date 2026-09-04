@@ -1,21 +1,10 @@
 import { NextResponse } from 'next/server';
-import { BedrockRuntimeClient, InvokeModelWithResponseStreamCommand } from "@aws-sdk/client-bedrock-runtime";
+import { InvokeModelWithResponseStreamCommand } from "@aws-sdk/client-bedrock-runtime";
 import { z } from 'zod';
 import { DelimiterStreamParser } from '@/lib/stream-parser';
+import { getBedrockClient, resolveBedrockCredentials, BEDROCK_CONFIG_ERROR } from '@/lib/bedrock';
 
 export const runtime = 'edge';
-
-const AWS_REGION = process.env.BEDROCK_AWS_REGION || process.env.AWS_REGION || "us-east-1";
-const AWS_ACCESS_KEY_ID = process.env.BEDROCK_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
-const AWS_SECRET_ACCESS_KEY = process.env.BEDROCK_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
-
-const bedrockClient = new BedrockRuntimeClient({
-  region: AWS_REGION,
-  credentials: {
-    accessKeyId: AWS_ACCESS_KEY_ID as string,
-    secretAccessKey: AWS_SECRET_ACCESS_KEY as string,
-  }
-});
 
 const VoiceToCodeSchema = z.object({
   text: z.string().min(1, 'Transcript cannot be empty').max(500, 'Transcript too long'),
@@ -23,23 +12,18 @@ const VoiceToCodeSchema = z.object({
 
 export async function POST(req: Request) {
   // ── [Bedrock Debug] environment sanity check ──
+  const creds = resolveBedrockCredentials();
   console.log("[Bedrock Debug] Checking credentials:", {
-    hasKeyId: !!(process.env.BEDROCK_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID),
-    keyIdPrefix: (process.env.BEDROCK_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID)
-      ? (process.env.BEDROCK_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID)!.substring(0, 4)
-      : "MISSING",
-    hasSecret: !!(process.env.BEDROCK_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY),
-    region: process.env.BEDROCK_AWS_REGION || process.env.AWS_REGION || "MISSING",
+    hasKeyId: !!creds.accessKeyId,
+    keyIdPrefix: creds.accessKeyId ? creds.accessKeyId.substring(0, 4) : "MISSING",
+    hasSecret: !!creds.secretAccessKey,
+    region: creds.region,
     modelId: process.env.BEDROCK_MODEL_ID || "amazon.nova-micro-v1:0 (built-in default)",
   });
 
-  const hasKeyId = !!(process.env.BEDROCK_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID);
-  const hasSecret = !!(process.env.BEDROCK_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY);
-  if (!hasKeyId || !hasSecret) {
-    return NextResponse.json(
-      { error: "Environment variables missing on server.", missing: { hasKeyId, hasSecret } },
-      { status: 500 }
-    );
+  const bedrock = getBedrockClient();
+  if (!bedrock) {
+    return NextResponse.json(BEDROCK_CONFIG_ERROR, { status: 500 });
   }
 
   try {
@@ -86,7 +70,7 @@ Return ONLY executable Python code. Brief inline code comments in Hinglish (star
 
     let response;
     try {
-      response = await bedrockClient.send(command);
+      response = await bedrock.send(command);
     } catch (err) {
       // Unmask the raw SDK error so throttling/credentials issues are visible
       console.error("[Bedrock SDK Raw Error]:", err);

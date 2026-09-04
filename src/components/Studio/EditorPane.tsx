@@ -41,7 +41,7 @@ export function EditorPane({ onRun }: EditorPaneProps) {
   const handleClearAll = useCallback(() => {
     const state = useExecutionStore.getState();
     if (state.activeFileId) {
-      state.updateFileContent(state.activeFileId, '# Start coding in Python...\n');
+      state.updateFileContent(state.activeFileId, '# Start coding in Python or speak your logic...\n');
     }
     state.clearOutput();
   }, []);

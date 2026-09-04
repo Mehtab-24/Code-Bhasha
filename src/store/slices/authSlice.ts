@@ -73,7 +73,7 @@ export const createAuthSlice: StateCreator<RootState, [], [], AuthSlice> = (set,
       {
         id: 'file_1',
         name: 'main.py',
-        content: '# Yahan apna Python code likho\nprint("Hello CodeBhasha!")'
+        content: '# Start coding in Python or speak your logic...\n'
       }
     ];
 

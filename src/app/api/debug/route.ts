@@ -1,17 +1,10 @@
 import { NextResponse } from 'next/server';
-import { BedrockRuntimeClient, InvokeModelWithResponseStreamCommand } from "@aws-sdk/client-bedrock-runtime";
+import { InvokeModelWithResponseStreamCommand } from "@aws-sdk/client-bedrock-runtime";
 import { z } from 'zod';
 import { DelimiterStreamParser } from '@/lib/stream-parser';
+import { getBedrockClient, BEDROCK_CONFIG_ERROR } from '@/lib/bedrock';
 
 export const runtime = 'edge';
-
-const client = new BedrockRuntimeClient({
-  region: process.env.BEDROCK_AWS_REGION || process.env.AWS_REGION || "us-east-1",
-  credentials: {
-    accessKeyId: (process.env.BEDROCK_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID) as string,
-    secretAccessKey: (process.env.BEDROCK_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY) as string,
-  }
-});
 
 const DebugSchema = z.object({
   code: z.string().max(10000), 
@@ -25,12 +18,10 @@ const DebugSchema = z.object({
 
 export async function POST(req: Request) {
   try {
-    if (!process.env.BEDROCK_AWS_ACCESS_KEY_ID && !process.env.AWS_ACCESS_KEY_ID) {
+    const bedrock = getBedrockClient();
+    if (!bedrock) {
       console.error("❌ CRITICAL: Missing Bedrock Environment Variables in Debug API!");
-      return NextResponse.json(
-        { friendly_message: "Bhai, server configuration mein problem hai.", fix_suggestion: "Admin se contact karo.", corrected_line: null },
-        { status: 500 }
-      );
+      return NextResponse.json(BEDROCK_CONFIG_ERROR, { status: 500 });
     }
 
     const body = await req.json();
@@ -70,7 +61,7 @@ You MUST output the response in this exact format, replacing the text in bracket
       body: JSON.stringify(payload),
     });
 
-    const response = await client.send(command);
+    const response = await bedrock.send(command);
 
     const stream = new ReadableStream({
       async start(controller) {

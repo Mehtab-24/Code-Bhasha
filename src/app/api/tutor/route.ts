@@ -1,20 +1,9 @@
 import { NextResponse } from 'next/server';
-import { BedrockRuntimeClient, InvokeModelWithResponseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
+import { InvokeModelWithResponseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
 import { z } from 'zod';
+import { getBedrockClient, BEDROCK_CONFIG_ERROR } from '@/lib/bedrock';
 
 export const runtime = 'edge';
-
-const AWS_REGION = process.env.BEDROCK_AWS_REGION || process.env.AWS_REGION || 'us-east-1';
-const AWS_ACCESS_KEY_ID = process.env.BEDROCK_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
-const AWS_SECRET_ACCESS_KEY = process.env.BEDROCK_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
-
-const bedrockClient = new BedrockRuntimeClient({
-  region: AWS_REGION,
-  credentials: {
-    accessKeyId: AWS_ACCESS_KEY_ID as string,
-    secretAccessKey: AWS_SECRET_ACCESS_KEY as string,
-  }
-});
 
 const TutorSchema = z.object({
   message: z.string().min(1),
@@ -33,12 +22,10 @@ const TutorSchema = z.object({
 
 export async function POST(req: Request) {
   try {
-    if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY) {
+    const bedrock = getBedrockClient();
+    if (!bedrock) {
       console.error('❌ CRITICAL: Missing Bedrock Environment Variables!');
-      return NextResponse.json(
-        { error: 'Server misconfiguration', message: 'AWS Bedrock configuration keys missing.' },
-        { status: 500 }
-      );
+      return NextResponse.json(BEDROCK_CONFIG_ERROR, { status: 500 });
     }
 
     const body = await req.json();
@@ -116,7 +103,7 @@ Use this context to tailor your Socratic guidance.`;
       body: JSON.stringify(payload),
     });
 
-    const response = await bedrockClient.send(command);
+    const response = await bedrock.send(command);
 
     const stream = new ReadableStream({
       async start(controller) {
