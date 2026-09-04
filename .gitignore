@@ -1,7 +1,10 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
-/node_modules
+# ---------------------------------------------------------------------------
+# Dependencies & Package Managers
+# ---------------------------------------------------------------------------
+node_modules/
+**/node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -10,37 +13,78 @@
 !.yarn/releases
 !.yarn/versions
 
-# testing
+# ---------------------------------------------------------------------------
+# Testing & Coverage
+# ---------------------------------------------------------------------------
 /coverage
+*.lcov
 
-# next.js
+# ---------------------------------------------------------------------------
+# Next.js, Vercel & Production Builds
+# ---------------------------------------------------------------------------
 /.next/
 /out/
-
-# production
 /build
+.vercel/
 
-# misc
-.DS_Store
-*.pem
+# ---------------------------------------------------------------------------
+# TypeScript & Cache
+# ---------------------------------------------------------------------------
+*.tsbuildinfo
+next-env.d.ts
+.eslintcache
 
-# debug
+# ---------------------------------------------------------------------------
+# Debug & Crash Logs
+# ---------------------------------------------------------------------------
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# local env files (CRITICAL SECURITY - DO NOT COMMIT SECRETS)
+# ---------------------------------------------------------------------------
+# OS & System Clutter (Windows / macOS / Linux)
+# ---------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------------------
+# IDEs & Editor Configuration
+# ---------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ---------------------------------------------------------------------------
+# Critical Security & Secrets
+# ---------------------------------------------------------------------------
+*.pem
+*.key
+*.cert
 .env
+.env*
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
-*.env
+!.env.example
 
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# ---------------------------------------------------------------------------
+# Internal Dev Notes & Hackathon Scratchpads
+# (Keeping only README.md and LICENSE.md in public git)
+# ---------------------------------------------------------------------------
+TESTING_GUIDE.md
+TEST_EXAMPLES.md
+design.md
+requirements.md
+tasks-phase3.md
+tasks*.md
+walkthrough*.md
