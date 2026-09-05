@@ -161,7 +161,8 @@ export const createRunSlice: StateCreator<RootState, [], [], RunSlice> = (set, g
       debugResult: {
         friendly_message: '',
         fix_suggestion: '',
-        corrected_line: null
+        corrected_line: null,
+        full_fixed_code: null
       }
     });
 
@@ -184,7 +185,8 @@ export const createRunSlice: StateCreator<RootState, [], [], RunSlice> = (set, g
       let finalResult: DebugResult = {
         friendly_message: '',
         fix_suggestion: '',
-        corrected_line: null
+        corrected_line: null,
+        full_fixed_code: null
       };
 
       if (reader) {
@@ -205,12 +207,13 @@ export const createRunSlice: StateCreator<RootState, [], [], RunSlice> = (set, g
               }
               
               set((state) => {
-                const prev = state.debugResult || { friendly_message: '', fix_suggestion: '', corrected_line: null };
-                
+                const prev = state.debugResult || { friendly_message: '', fix_suggestion: '', corrected_line: null, full_fixed_code: null };
+
                 let friendly_message = prev.friendly_message;
                 let fix_suggestion = prev.fix_suggestion;
                 let corrected_line = prev.corrected_line;
-                
+                let full_fixed_code = prev.full_fixed_code;
+
                 if (parsed.field === 'friendly_message') {
                   friendly_message += parsed.text;
                 } else if (parsed.field === 'fix_suggestion') {
@@ -218,16 +221,23 @@ export const createRunSlice: StateCreator<RootState, [], [], RunSlice> = (set, g
                 } else if (parsed.field === 'corrected_line') {
                   if (corrected_line === null) corrected_line = "";
                   corrected_line += parsed.text;
+                } else if (parsed.field === 'full_fixed_code') {
+                  if (full_fixed_code === null) full_fixed_code = "";
+                  full_fixed_code += parsed.text;
                 }
-                
+
                 if (corrected_line && (corrected_line.trim() === 'null' || corrected_line.trim() === 'None')) {
                   corrected_line = null;
+                }
+                if (full_fixed_code && (full_fixed_code.trim() === 'null' || full_fixed_code.trim() === 'None')) {
+                  full_fixed_code = null;
                 }
 
                 finalResult = {
                   friendly_message,
                   fix_suggestion,
-                  corrected_line
+                  corrected_line,
+                  full_fixed_code
                 };
 
                 return {
@@ -258,7 +268,8 @@ export const createRunSlice: StateCreator<RootState, [], [], RunSlice> = (set, g
         debugResult: {
           friendly_message: 'Bhai, debug explanation fetch nahi ho payi. Network check karo.',
           fix_suggestion: 'Internet connection check karo aur dobara try karo.',
-          corrected_line: null
+          corrected_line: null,
+          full_fixed_code: null
         },
         isFetchingDebug: false
       });

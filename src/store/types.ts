@@ -16,6 +16,8 @@ export interface DebugResult {
   friendly_message: string;
   fix_suggestion: string;
   corrected_line: string | null;
+  /** complete corrected script — whole-buffer replacement path for Apply Fix (null = line patch only) */
+  full_fixed_code: string | null;
 }
 
 export interface VoiceResult {

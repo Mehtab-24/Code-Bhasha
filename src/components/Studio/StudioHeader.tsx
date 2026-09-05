@@ -70,11 +70,11 @@ export function StudioHeader({ onOpenTutorial, intentOpen, onToggleIntent }: Stu
       <div className="flex items-center gap-2">
         <span className="w-px h-5" style={{ background: 'rgba(255,255,255,0.08)' }} />
 
-        {/* Intent panel toggle (⌘B focus mode) */}
+        {/* Intent panel toggle (⌘B focus mode) — desktop split pane only */}
         <motion.button
           type="button"
           onClick={onToggleIntent}
-          className="p-1.5 rounded-lg transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/40"
+          className="max-lg:hidden p-1.5 rounded-lg transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/40"
           style={{
             background: intentOpen ? 'rgba(34,211,238,0.07)' : 'rgba(255,255,255,0.02)',
             border: `1px solid ${intentOpen ? 'rgba(34,211,238,0.25)' : 'rgba(255,255,255,0.08)'}`,

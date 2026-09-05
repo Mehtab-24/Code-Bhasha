@@ -171,11 +171,8 @@ export function MicroDemo() {
   const outputComplete = outputLines >= ex.output.length;
 
   return (
-    <motion.div
-      className="lp-card relative rounded-2xl overflow-hidden text-left"
-      initial={{ opacity: 0, y: 24 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
+    <div
+      className="lp-card relative rounded-2xl overflow-hidden text-left w-full flex-1 flex flex-col"
       aria-label="Live demo: Hinglish voice prompt compiling to Python"
     >
       {/* ── Window chrome ── */}
@@ -194,29 +191,34 @@ export function MicroDemo() {
             codebhasha · live preview
           </span>
         </div>
-        <AnimatePresence mode="wait">
-          <motion.span
-            key={phase}
-            className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-[0.12em] shrink-0"
-            style={{ border: '1px solid rgba(255,255,255,0.08)', color: meta.color }}
-            initial={{ opacity: 0, y: 3 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -3 }}
-            transition={{ duration: 0.18 }}
-          >
+        {/* Fixed-height slot: AnimatePresence mode="wait" unmounts the chip
+            between phases — without a reserved slot the header row (and the
+            whole card) would shrink and regrow every phase change. */}
+        <div className="h-[22px] flex items-center shrink-0">
+          <AnimatePresence mode="wait">
             <motion.span
-              className="w-1 h-1 rounded-full"
-              style={{ background: meta.color }}
-              animate={{ opacity: [1, 0.3, 1] }}
-              transition={{ duration: 1.2, repeat: Infinity }}
-            />
-            {meta.label}
-          </motion.span>
-        </AnimatePresence>
+              key={phase}
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-[0.12em] shrink-0"
+              style={{ border: '1px solid rgba(255,255,255,0.08)', color: meta.color }}
+              initial={{ opacity: 0, y: 3 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -3 }}
+              transition={{ duration: 0.18 }}
+            >
+              <motion.span
+                className="w-1 h-1 rounded-full"
+                style={{ background: meta.color }}
+                animate={{ opacity: [1, 0.3, 1] }}
+                transition={{ duration: 1.2, repeat: Infinity }}
+              />
+              {meta.label}
+            </motion.span>
+          </AnimatePresence>
+        </div>
       </div>
 
       {/* ── Dual-state body: spoken Hinglish → compiling Python ── */}
-      <div className="grid md:grid-cols-2 md:divide-x md:divide-white/[0.06]">
+      <div className="grid md:grid-cols-2 md:divide-x md:divide-white/[0.06] flex-1">
         {/* Input state */}
         <div className="p-4 flex flex-col gap-3">
           <div className="flex items-center justify-between">
@@ -256,7 +258,13 @@ export function MicroDemo() {
           <span className="text-[10px] font-mono tracking-[0.16em] uppercase select-none" style={{ color: 'var(--lp-text-3)' }}>
             Output · Python
           </span>
-          <div className="font-mono text-[12.5px] leading-[1.7]" style={{ minHeight: CODE_WELL_LINES * 21 + 4 }}>
+          {/* Fixed well height (tallest example): as characters type, lines may
+              soft-wrap on narrow screens — a fixed height with overflow-hidden
+              keeps those re-wraps from resizing the card and shifting the page. */}
+          <div
+            className="font-mono text-[12.5px] leading-[1.7] overflow-hidden"
+            style={{ height: CODE_WELL_LINES * 21 + 4 }}
+          >
             {codeLines.map((line, i) => {
               const content = typedLines[i] ?? '';
               const caretHere = phase === 'coding' && typedLines.length - 1 === i;
@@ -281,9 +289,11 @@ export function MicroDemo() {
         </div>
       </div>
 
-      {/* ── Result strip ── */}
+      {/* ── Result strip ──
+          Fixed height: the streaming caret and the "✓ time" chip appear and
+          disappear mid-loop — a fixed row keeps them from resizing the card. */}
       <div
-        className="flex items-center gap-3 px-4 py-2.5 font-mono text-[12px]"
+        className="flex items-center gap-3 px-4 h-[42px] overflow-hidden font-mono text-[12px]"
         style={{ borderTop: '1px solid var(--lp-border)', background: 'rgba(255,255,255,0.012)' }}
       >
         <span className="flex items-center gap-1.5 text-[11px] shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }}>
@@ -319,6 +329,6 @@ export function MicroDemo() {
           />
         ))}
       </div>
-    </motion.div>
+    </div>
   );
 }

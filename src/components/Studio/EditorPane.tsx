@@ -2,17 +2,22 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Trash2, Zap } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { useExecutionStore } from '@/store/useExecutionStore';
 import { CodeEditor } from '@/components/Editor/CodeEditor';
+import { TokenShimmer } from '@/components/Editor/TokenShimmer';
 import { TerminalDock } from './TerminalDock';
 
 interface EditorPaneProps {
   onRun: () => void;
+  /** 'split' = inside the desktop SplitPane (fluid height) ·
+   *  'stacked' = mobile/tablet two-tab view (viewport-based heights) */
+  variant?: 'split' | 'stacked';
 }
 
 // ─── Right column: Monaco editor · control strip · terminal dock ──────────────
-export function EditorPane({ onRun }: EditorPaneProps) {
+export function EditorPane({ onRun, variant = 'split' }: EditorPaneProps) {
+  const isStacked = variant === 'stacked';
   const {
     files,
     activeFileId,
@@ -52,46 +57,33 @@ export function EditorPane({ onRun }: EditorPaneProps) {
   const tokenEstimate = streamedChars > 0 ? Math.max(1, Math.ceil(streamedChars / 4)) : 0;
 
   return (
-    <div className="h-full min-h-0 flex flex-col gap-2.5">
+    <div
+      className={
+        isStacked
+          ? 'flex flex-col gap-3'
+          : 'h-full min-h-0 flex flex-col gap-2.5'
+      }
+    >
       {/* ── Editor (Monaco owns its interior scrolling) ── */}
-      <div className="relative flex-1 min-h-0">
+      <div className={isStacked ? 'relative h-[52vh] min-h-[350px]' : 'relative flex-1 min-h-0'}>
         <CodeEditor
           value={activeFile?.content || ''}
           onChange={handleEditorChange}
         />
 
-        {/* ── Ghost lines inside the code viewport while Bedrock warms up ──
-            Confined to the area below the editor chrome (36px title bar +
-            36px tab bar) and above the 28px status bar, aligned after the
-            line-number gutter so it never covers real chrome. ── */}
+        {/* ── Top-edge scanline beam while Bedrock is generating ── */}
+        {isGeneratingCode && (
+          <div
+            className="absolute top-0 left-0 z-20 h-[2px] w-full bg-gradient-to-r from-transparent via-emerald-400 to-transparent animate-pulse pointer-events-none"
+            aria-hidden
+          />
+        )}
+
+        {/* ── Token shimmer while the first tokens are still in flight ──
+            Replaces the old 3-line ghost-bar skeleton with a single centered
+            status card over a blurred backdrop. ── */}
         <AnimatePresence>
-          {awaitingFirstToken && (
-            <motion.div
-              className="absolute z-10 pointer-events-none space-y-3"
-              style={{ top: 88, bottom: 44, left: 48, right: 24 }}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              aria-hidden
-            >
-              {[0.62, 0.78, 0.44].map((width, i) => (
-                <motion.div
-                  key={i}
-                  className="h-[10px] rounded-md"
-                  style={{
-                    width: `${width * 60}%`,
-                    background:
-                      'linear-gradient(90deg, rgba(34,211,238,0.04), rgba(34,211,238,0.16), rgba(34,211,238,0.04))',
-                    backgroundSize: '200% 100%',
-                    boxShadow: '0 0 22px rgba(34,211,238,0.08)',
-                  }}
-                  animate={{ backgroundPosition: ['200% 0', '-200% 0'] }}
-                  transition={{ duration: 1.7, repeat: Infinity, ease: 'linear', delay: i * 0.18 }}
-                />
-              ))}
-            </motion.div>
-          )}
+          {awaitingFirstToken && <TokenShimmer label="Synthesizing Python logic..." />}
         </AnimatePresence>
 
         {/* ── Typing indicator while tokens stream into the buffer ── */}
@@ -243,7 +235,10 @@ export function EditorPane({ onRun }: EditorPaneProps) {
       </div>
 
       {/* ── Terminal dock ── */}
-      <div className="shrink-0" style={{ height: '36%', minHeight: 210, maxHeight: '46%' }}>
+      <div
+        className={isStacked ? 'shrink-0 h-[38vh] min-h-[220px]' : 'shrink-0'}
+        style={isStacked ? undefined : { height: '36%', minHeight: 210, maxHeight: '46%' }}
+      >
         <TerminalDock />
       </div>
     </div>

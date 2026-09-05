@@ -41,7 +41,9 @@ You MUST output the response in this exact format, replacing the text in bracket
 ---FIX_SUGGESTION---
 [Hinglish instruction on exactly what to type/change]
 ---CORRECTED_LINE---
-[the corrected version of the error line, or the word 'null']`;
+[the corrected version of the error line, or the word 'null']
+---FULL_FIXED_CODE---
+[the complete corrected Python script with the fix applied. Strict formatting: every statement MUST be on its own line separated by newline characters (\\n). NEVER combine a comment and a Python statement on the same line. Do NOT wrap the script in markdown fences. Keep all other lines from the original code unchanged. If you cannot produce a full corrected script, output the word 'null'.]`;
 
     const userPrompt = `Error Type: ${error.type}\nError Message: ${error.message}\nLine Number: ${error.lineno}\nProblematic Line: ${error.line_text}\nFull Code:\n${code}`;
 
@@ -49,7 +51,7 @@ You MUST output the response in this exact format, replacing the text in bracket
       system: [{ text: systemPrompt }],
       messages: [{ role: "user", content: [{ text: userPrompt }] }],
       inferenceConfig: {
-        max_new_tokens: 500,
+        max_new_tokens: 900,
         temperature: 0.1,
       }
     };
@@ -73,7 +75,8 @@ You MUST output the response in this exact format, replacing the text in bracket
         const parser = new DelimiterStreamParser([
           { tag: '---FRIENDLY_MESSAGE---', field: 'friendly_message' },
           { tag: '---FIX_SUGGESTION---', field: 'fix_suggestion' },
-          { tag: '---CORRECTED_LINE---', field: 'corrected_line' }
+          { tag: '---CORRECTED_LINE---', field: 'corrected_line' },
+          { tag: '---FULL_FIXED_CODE---', field: 'full_fixed_code' }
         ]);
         const encoder = new TextEncoder();
 

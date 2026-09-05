@@ -6,6 +6,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import type { Monaco } from '@monaco-editor/react';
 import type * as monacoEditor from 'monaco-editor';
 import { useExecutionStore } from '@/store/useExecutionStore';
+import { TokenShimmer } from './TokenShimmer';
 import { Plus, X, History, RotateCcw, Award, Copy, Download, Check } from 'lucide-react';
 
 interface CodeEditorProps {
@@ -212,39 +213,9 @@ function FileTab({
 }
 
 function EditorLoadingState() {
-  const lines = [60, 85, 45, 70, 90, 38, 65, 78, 52, 83];
-  return (
-    <div className="flex flex-col gap-3 p-6 h-full" style={{ background: '#0a0d13' }}>
-      {lines.map((width, i) => (
-        <motion.div key={i} className="flex items-center gap-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }}>
-          <div className="w-6 h-3 rounded shrink-0" style={{ background: 'rgba(255,255,255,0.06)' }} />
-          <motion.div
-            className="h-3 rounded"
-            style={{
-              width: `${width}%`,
-              background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 100%)',
-              backgroundSize: '200% 100%',
-            }}
-            animate={{ backgroundPosition: ['200% 0', '-200% 0'] }}
-            transition={{ duration: 1.8, repeat: Infinity, ease: 'linear', delay: i * 0.06 }}
-          />
-        </motion.div>
-      ))}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3" style={{ background: 'rgba(0,0,0,0.6)', borderRadius: 12, padding: '16px 24px' }}>
-          <motion.div
-            className="w-6 h-6 rounded-full"
-            style={{ border: '2px solid rgba(34,211,238,0.2)', borderTopColor: '#22d3ee' }}
-            animate={{ rotate: 360 }}
-            transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }}
-          />
-          <span className="text-xs font-mono" style={{ color: 'rgba(34,211,238,0.5)', letterSpacing: '0.16em' }}>
-            LOADING EDITOR
-          </span>
-        </div>
-      </div>
-    </div>
-  );
+  // Sleek boot state — same token-shimmer language as the generation loader,
+  // no multi-line ghost bars.
+  return <TokenShimmer label="Booting editor..." />;
 }
 
 function CharCounter({ value }: { value: string }) {

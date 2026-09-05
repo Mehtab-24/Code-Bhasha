@@ -58,14 +58,21 @@ export class DelimiterStreamParser {
     if (this.buffer && this.currentField) {
       // Find the maximum potential header tag length to avoid slicing a half-formed tag
       const maxTagLen = Math.max(...this.headers.map((h) => h.tag.length));
-      
-      // Look for a possible tag prefix (starting with '-') near the end of the buffer
+
+      // Hold back any buffer SUFFIX that could be the start of one of the
+      // tags — a marker split across chunk boundaries ("---CORRECTED_L" +
+      // "INE---…") must never be emitted as field content, and the fragment
+      // must stay intact so the tag still matches once the rest arrives.
+      // The longest matching suffix decides the holdback; anything before it
+      // cannot begin a tag and is safe to emit.
       let safeLength = this.buffer.length;
-      const lastDash = this.buffer.lastIndexOf('-');
-      
-      if (lastDash !== -1 && lastDash >= this.buffer.length - maxTagLen) {
-        // We have a partial tag forming, buffer it
-        safeLength = lastDash;
+      const maxHold = Math.min(this.buffer.length, maxTagLen - 1);
+      for (let hold = maxHold; hold > 0; hold--) {
+        const suffix = this.buffer.slice(-hold);
+        if (this.headers.some((h) => h.tag.startsWith(suffix))) {
+          safeLength = this.buffer.length - hold;
+          break;
+        }
       }
 
       if (safeLength > 0) {

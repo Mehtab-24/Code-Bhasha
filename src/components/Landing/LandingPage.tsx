@@ -187,10 +187,12 @@ export function LandingPage() {
           initial="hidden"
           animate="visible"
         >
-          <div>
+          {/* Hero copy — fixed flex column: children never shrink or reflow
+              while the live demo below re-renders mid-typing. */}
+          <div className="flex flex-col min-w-0">
             <motion.p
               variants={itemVariants}
-              className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.18em] text-slate-500 select-none"
+              className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.18em] text-slate-500 select-none shrink-0"
             >
               <span className="w-1.5 h-1.5 bg-emerald-400" aria-hidden />
               Hinglish → Python · voice-first
@@ -198,7 +200,7 @@ export function LandingPage() {
 
             <motion.h1
               variants={itemVariants}
-              className="mt-5 font-bold tracking-tight leading-[1.05] text-balance max-w-xl text-4xl sm:text-5xl"
+              className="mt-5 font-bold tracking-tight leading-[1.05] text-balance max-w-xl text-4xl sm:text-5xl shrink-0"
             >
               <span className="block text-slate-50">Syntax is a barrier.</span>
               <span className="block text-slate-400">Logic is universal.</span>
@@ -206,13 +208,13 @@ export function LandingPage() {
 
             <motion.p
               variants={itemVariants}
-              className="mt-6 text-base sm:text-lg leading-relaxed max-w-md text-slate-400 text-pretty"
+              className="mt-6 text-base sm:text-lg leading-relaxed max-w-md text-slate-400 text-pretty shrink-0"
             >
               The voice-first compiler that translates conversational Hinglish into executable
               Python right in your browser. Speak your logic, inspect the code, execute instantly.
             </motion.p>
 
-            <motion.div variants={itemVariants} className="mt-8 flex flex-wrap items-center gap-3">
+            <motion.div variants={itemVariants} className="mt-8 flex flex-wrap items-center gap-3 shrink-0">
               <Link
                 href="/app"
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-slate-100 text-[#0B0C10] hover:bg-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
@@ -234,7 +236,7 @@ export function LandingPage() {
 
             <motion.div
               variants={itemVariants}
-              className="mt-6 flex items-center gap-2 text-xs text-slate-500 font-mono select-none"
+              className="mt-6 flex items-center gap-2 text-xs text-slate-500 font-mono select-none shrink-0"
             >
               <span
                 className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-white/[0.07] bg-white/[0.02]"
@@ -252,9 +254,16 @@ export function LandingPage() {
             </motion.div>
           </div>
 
-          {/* Live dual-state preview */}
-          <motion.div variants={itemVariants}>
-            <MicroDemo />
+          {/* Live dual-state preview — strict min-height + layout containment so
+              DOM changes inside the demo (typed lines, phase chip) can never
+              push or pull the hero copy above it. */}
+          <motion.div variants={itemVariants} className="flex flex-col min-w-0">
+            <div
+              className="flex flex-col min-h-[340px] sm:min-h-[380px] md:min-h-[420px] overflow-hidden"
+              style={{ contain: 'layout' }}
+            >
+              <MicroDemo />
+            </div>
             <p
               className="mt-3 text-[10.5px] font-mono uppercase tracking-[0.2em] text-slate-500 text-center select-none"
             >

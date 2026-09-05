@@ -114,6 +114,13 @@ export const createVoiceSlice: StateCreator<RootState, [], [], VoiceSlice> = (se
         explanation: ''
       };
 
+      // Raw accumulation of every 'code' chunk. The sanitizer must ALWAYS
+      // re-run over this raw text — never over its own previous output. The
+      // sanitizer ends with a trim(), so feeding its result back in (the old
+      // behavior) ate the newline whenever a chunk boundary landed right
+      // after one, gluing the next statement onto the preceding # comment.
+      let rawCode = '';
+
       // Once the model drifts past its code into verbose prose, every later
       // 'code' chunk is explanation text — stop feeding it to the buffer.
       let codeClosed = false;
@@ -146,9 +153,12 @@ export const createVoiceSlice: StateCreator<RootState, [], [], VoiceSlice> = (se
                   if (codeClosed) {
                     explanation += parsed.text;
                   } else {
+                    rawCode += parsed.text;
                     // Sanitation guard: only pure executable Python reaches
                     // the editor buffer (no markers, fences, or prose).
-                    const sanitized = sanitizeGeneratedCode(code + parsed.text);
+                    // Re-sanitized from the full raw accumulation each chunk
+                    // so no chunk boundary can ever eat a newline.
+                    const sanitized = sanitizeGeneratedCode(rawCode);
                     code = sanitized.code;
                     if (sanitized.truncated) {
                       codeClosed = true;

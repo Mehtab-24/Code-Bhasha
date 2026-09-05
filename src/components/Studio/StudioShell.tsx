@@ -2,6 +2,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import {
+  Code2,
   Keyboard,
   Mic,
   PanelLeft,
@@ -11,7 +12,7 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useExecutionStore } from '@/store/useExecutionStore';
 import { getExecutionService } from '@/lib/execution-service';
 import { formatPython } from '@/lib/python-format';
@@ -25,6 +26,7 @@ import { TutorDrawer } from '@/components/Tutor/TutorDrawer';
 import { TutorialModal } from '@/components/TutorialModal';
 
 type StudioMode = 'voice' | 'text';
+type MobileView = 'studio' | 'code';
 
 // ─── Scanline overlay for depth ───────────────────────────────────────────────
 function ScanlineOverlay() {
@@ -40,7 +42,51 @@ function ScanlineOverlay() {
   );
 }
 
-// ─── Fixed 100vh developer studio shell ───────────────────────────────────────
+// ─── Mobile/tablet top-level view switcher pill ───────────────────────────────
+function MobileViewTab({
+  id,
+  activeView,
+  onSelect,
+  icon: Icon,
+  label,
+  accent,
+}: {
+  id: MobileView;
+  activeView: MobileView;
+  onSelect: (view: MobileView) => void;
+  icon: React.ElementType;
+  label: string;
+  accent: string;
+}) {
+  const isActive = id === activeView;
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={isActive}
+      onClick={() => onSelect(id)}
+      className="relative flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-semibold tracking-wide select-none transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25"
+      style={{ color: isActive ? accent : 'rgba(255,255,255,0.4)', zIndex: 1 }}
+    >
+      {isActive && (
+        <motion.span
+          className="absolute inset-0 rounded-lg"
+          layoutId="studio-view-pill"
+          style={{
+            background: 'rgba(255,255,255,0.06)',
+            border: `1px solid ${accent}44`,
+            boxShadow: `0 0 16px ${accent}1f, inset 0 1px 0 rgba(255,255,255,0.07)`,
+          }}
+          transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+        />
+      )}
+      <Icon className="w-3.5 h-3.5 relative" />
+      <span className="relative">{label}</span>
+    </button>
+  );
+}
+
+// ─── Fixed 100vh developer studio shell (desktop) · two-tab scroller (mobile) ─
 export function StudioShell() {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -49,6 +95,39 @@ export function StudioShell() {
   const [toast, setToast] = useState<{ id: number; message: string } | null>(null);
   const setWorkerReady = useExecutionStore((s) => s.setWorkerReady);
   const isDesktop = useIsDesktop();
+
+  // ── Mobile/tablet two-tab architecture (< lg) ──
+  // Both panes stay mounted (CSS-toggled) so the Monaco buffer, mic session
+  // and prompt state survive tab switches; the code pane mounts lazily on
+  // first activation so Monaco never measures a zero-size hidden container.
+  const [mobileTab, setMobileTab] = useState<MobileView>('studio');
+  const [codePaneMounted, setCodePaneMounted] = useState(false);
+
+  const switchMobileTab = useCallback((view: MobileView) => {
+    setMobileTab(view);
+    window.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
+    if (!isDesktop && mobileTab === 'code') setCodePaneMounted(true);
+  }, [isDesktop, mobileTab]);
+
+  // Auto-switch to the Code & Terminal tab the moment a generation yields
+  // code — covers both the streaming path (isGeneratingCode falls) and the
+  // IndexedDB cache path (code appears without ever toggling the flag).
+  const isGeneratingCode = useExecutionStore((s) => s.isGeneratingCode);
+  const generatedCodeLen = useExecutionStore((s) => s.voiceResult?.code?.length ?? 0);
+  const generationRef = useRef({ generating: false, codeLen: 0 });
+  useEffect(() => {
+    const prev = generationRef.current;
+    const finished = prev.generating && !isGeneratingCode;
+    const codeArrived = prev.codeLen === 0 && generatedCodeLen > 0 && !isGeneratingCode;
+    if ((finished || codeArrived) && generatedCodeLen > 0) {
+      setMobileTab('code');
+      window.scrollTo(0, 0);
+    }
+    generationRef.current = { generating: isGeneratingCode, codeLen: generatedCodeLen };
+  }, [isGeneratingCode, generatedCodeLen]);
 
   const showToast = useCallback((message: string) => {
     setToast({ id: Date.now(), message });
@@ -177,6 +256,7 @@ export function StudioShell() {
         state.updateFileContent(newFileId, code ?? '');
         state.setActiveFile(newFileId);
         window.history.replaceState(null, '', window.location.pathname);
+        setMobileTab('code');
         showToast('Shared snippet ek new tab mein khul gaya 📎');
       }, 250);
     })();
@@ -220,9 +300,24 @@ export function StudioShell() {
     { id: 'reset', label: 'Reset workspace — fresh template', icon: RotateCcw, accent: '#f87171', keywords: 'restart wipe clear new', onSelect: handleResetWorkspace },
   ];
 
+  // AI intent card — shared by the desktop split pane and the mobile tab
+  const inputCard = (
+    <div
+      className="h-full rounded-xl overflow-hidden"
+      style={{
+        border: '1px solid rgba(255,255,255,0.07)',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 12px 40px rgba(0,0,0,0.4)',
+      }}
+    >
+      <AiStudio mode={mode} onModeChange={setMode} />
+    </div>
+  );
+
   return (
     <div
-      className="h-dvh flex flex-col overflow-hidden relative"
+      className={`relative flex flex-col ${
+        isDesktop ? 'h-dvh overflow-hidden' : 'min-h-dvh pb-16'
+      }`}
       style={{ background: '#07090d' }}
     >
       {/* ── Ambient backdrop ── */}
@@ -264,11 +359,56 @@ export function StudioShell() {
         />
       </div>
 
-      <StudioHeader
-        onOpenTutorial={() => setIsTutorialOpen(true)}
-        intentOpen={intentOpen}
-        onToggleIntent={toggleIntent}
-      />
+      {/* Navbar stays pinned while the mobile layout scrolls naturally */}
+      <div className={isDesktop ? 'shrink-0' : 'sticky top-0 z-40 shrink-0'}>
+        <StudioHeader
+          onOpenTutorial={() => setIsTutorialOpen(true)}
+          intentOpen={intentOpen}
+          onToggleIntent={toggleIntent}
+        />
+      </div>
+
+      {/* ── Mobile/tablet two-tab switcher (right below the navbar) ── */}
+      {!isDesktop && (
+        <div
+          className="sticky top-12 z-30 shrink-0"
+          style={{
+            background: 'rgba(7, 9, 13, 0.88)',
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            backdropFilter: 'blur(14px)',
+            WebkitBackdropFilter: 'blur(14px)',
+          }}
+        >
+          <div className="w-full max-w-[1720px] mx-auto px-3 py-2">
+            <div
+              className="flex gap-1 p-1 rounded-xl"
+              style={{
+                background: 'rgba(255,255,255,0.025)',
+                border: '1px solid rgba(255,255,255,0.06)',
+              }}
+              role="tablist"
+              aria-label="Studio views"
+            >
+              <MobileViewTab
+                id="studio"
+                activeView={mobileTab}
+                onSelect={switchMobileTab}
+                icon={Mic}
+                label="Studio / Input"
+                accent="#22d3ee"
+              />
+              <MobileViewTab
+                id="code"
+                activeView={mobileTab}
+                onSelect={switchMobileTab}
+                icon={Code2}
+                label="Code & Terminal"
+                accent="#00FFA3"
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <motion.main
         className="relative z-10 flex-1 min-h-0 w-full max-w-[1720px] mx-auto p-3"
@@ -276,25 +416,28 @@ export function StudioShell() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
       >
-        <SplitPane
-          direction={isDesktop ? 'columns' : 'rows'}
-          defaultRatio={0.45}
-          storageKey="codebhasha-studio-split"
-          label="Resize studio panes"
-          collapsed={!intentOpen}
-          first={
-            <div
-              className="h-full rounded-xl overflow-hidden"
-              style={{
-                border: '1px solid rgba(255,255,255,0.07)',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 12px 40px rgba(0,0,0,0.4)',
-              }}
-            >
-              <AiStudio mode={mode} onModeChange={setMode} />
-            </div>
-          }
-          second={<EditorPane onRun={handleRun} />}
-        />
+        {isDesktop ? (
+          <SplitPane
+            direction="columns"
+            defaultRatio={0.45}
+            storageKey="codebhasha-studio-split"
+            label="Resize studio panes"
+            collapsed={!intentOpen}
+            first={inputCard}
+            second={<EditorPane onRun={handleRun} />}
+          />
+        ) : (
+          <>
+            {/* Tab 1 — full-width input studio */}
+            <div className={mobileTab === 'studio' ? 'block' : 'hidden'}>{inputCard}</div>
+            {/* Tab 2 — full-width editor + controls + terminal dock */}
+            {codePaneMounted && (
+              <div className={mobileTab === 'code' ? 'block' : 'hidden'}>
+                <EditorPane onRun={handleRun} variant="stacked" />
+              </div>
+            )}
+          </>
+        )}
       </motion.main>
 
       {/* ── Overlays ── */}

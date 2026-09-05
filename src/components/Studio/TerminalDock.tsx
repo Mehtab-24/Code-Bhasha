@@ -2,9 +2,10 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { Terminal, Bug, Keyboard, Eye, Clock, ChevronRight, Lightbulb, AlertCircle, CheckCircle2, Wand2 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useExecutionStore, type ExecutionError, type DebugResult, type OutputLine } from '@/store/useExecutionStore';
 import { tokenizePython, TOKEN_COLORS } from '@/lib/python-highlight';
+import { stripMarkdownFences } from '@/lib/sanitize-code';
 import { TracerPanel } from '@/components/Editor/TracerPanel';
 
 type DockTab = 'output' | 'debugger' | 'stdin' | 'tracer';
@@ -158,15 +159,25 @@ function OutputContent({
 // ─── Desi Debugger tab: high-fidelity diagnostic inspector ────────────────────
 // Left region: conversational Hinglish mentor card (avatar, error summary,
 // explanation). Right region: broken-vs-corrected code diff with one-click
-// Apply Fix that patches the active editor buffer via the existing store.
+// Apply Fix that patches the active editor buffer via the existing store —
+// the debugger's whole fixed script replaces the buffer when available, and
+// a single-line patch of the error line is the fallback. After applying, the
+// error indicator clears and the dock returns to Output with a toast.
 
 // The debug API sometimes folds every section into `friendly_message` with
 // plain-text markers (legacy wire format). This display-side normalizer pulls
-// them apart; proper per-field responses pass through untouched.
-function splitDiagnostic(raw: string): { message: string; fix?: string; corrected?: string } {
+// them apart; proper per-field responses pass through untouched. Sections are
+// extracted tail-first so an earlier marker never swallows the ones after it.
+function splitDiagnostic(raw: string): { message: string; fix?: string; corrected?: string; fullCode?: string } {
   let message = raw;
   let fix: string | undefined;
   let corrected: string | undefined;
+  let fullCode: string | undefined;
+  const fullIndex = message.indexOf('---FULL_FIXED_CODE---');
+  if (fullIndex !== -1) {
+    fullCode = message.slice(fullIndex + '---FULL_FIXED_CODE---'.length);
+    message = message.slice(0, fullIndex);
+  }
   const correctedIndex = message.indexOf('---CORRECTED_LINE---');
   if (correctedIndex !== -1) {
     corrected = message.slice(correctedIndex + '---CORRECTED_LINE---'.length);
@@ -177,25 +188,27 @@ function splitDiagnostic(raw: string): { message: string; fix?: string; correcte
     fix = message.slice(fixIndex + '---FIX_SUGGESTION---'.length);
     message = message.slice(0, fixIndex);
   }
-  return { message: message.trim(), fix: fix?.trim() || undefined, corrected: corrected?.trim() || undefined };
+  return {
+    message: message.trim(),
+    fix: fix?.trim() || undefined,
+    corrected: corrected?.trim() || undefined,
+    fullCode: fullCode?.trim() || undefined,
+  };
 }
 
 function DebuggerContent({
   error,
   debugResult,
   isFetchingDebug,
+  onFixApplied,
 }: {
   error: ExecutionError | null;
   debugResult: DebugResult | null;
   isFetchingDebug: boolean;
+  /** invoked after the fix lands in the editor buffer — clears the error indicator, returns to Output */
+  onFixApplied: () => void;
 }) {
   const { files, activeFileId, updateFileContent } = useExecutionStore();
-  const [applied, setApplied] = useState(false);
-
-  // A new error resets the Apply Fix button
-  useEffect(() => {
-    setApplied(false);
-  }, [error]);
 
   const parsed = useMemo(
     () => splitDiagnostic(debugResult?.friendly_message ?? ''),
@@ -205,29 +218,50 @@ function DebuggerContent({
   const fixSuggestion = debugResult?.fix_suggestion?.trim() || parsed.fix;
   // Prefer the dedicated field; fall back to the marker-embedded payload.
   const correctedLine = debugResult?.corrected_line?.trim() || parsed.corrected;
-  const hasCorrection =
+  // Whole-script fix from the debugger (Applied Fix path 1); line patch is the fallback.
+  const fullFixedCode = debugResult?.full_fixed_code?.trim() || parsed.fullCode || '';
+  const hasFullFix = fullFixedCode.trim().length > 0;
+  const hasLineCorrection =
     !!correctedLine && !!error?.line_text && correctedLine.trim() !== error.line_text.trim();
+  const hasFix = hasFullFix || hasLineCorrection;
   const isThinking = isFetchingDebug && !friendlyMessage;
 
-  const applyFix = () => {
-    if (!error || !correctedLine || !error.lineno) return;
+  const handleApplyFix = (fix: { fixedCode?: string; targetLine?: number; replacementLine?: string }) => {
     const file = files.find((f) => f.id === activeFileId);
     if (!file) return;
+
+    // Path 1 — whole-script replacement: the debugger returned the complete
+    // corrected Python file, so overwrite the editor buffer directly. Monaco
+    // syncs its model from the store-backed `value` prop on the next render.
+    if (fix.fixedCode && fix.fixedCode.trim()) {
+      updateFileContent(activeFileId, stripMarkdownFences(fix.fixedCode));
+      onFixApplied();
+      return;
+    }
+
+    // Path 2 — line-level patch: swap the offending line in place. An
+    // out-of-range target appends instead of silently dropping the fix.
+    if (!fix.replacementLine || !fix.targetLine) return;
     const lines = file.content.split('\n');
-    const index = error.lineno - 1;
-    if (index < 0 || index >= lines.length) return;
-    const replacementLines = correctedLine
+    const replacementLines = fix.replacementLine
       .replace(/\r/g, '')
       .replace(/\n+$/, '')
       .split('\n');
-    lines.splice(index, 1, ...replacementLines);
+    const index = fix.targetLine - 1;
+    const inRange = index >= 0 && index < lines.length;
+    if (inRange) {
+      lines.splice(index, 1, ...replacementLines);
+    } else {
+      lines.push(...replacementLines);
+    }
     updateFileContent(activeFileId, lines.join('\n'));
+    const startLine = inRange ? fix.targetLine : lines.length - replacementLines.length + 1;
     window.dispatchEvent(
       new CustomEvent('codebhasha:highlight-line', {
-        detail: { startLine: error.lineno, endLine: error.lineno + replacementLines.length - 1 },
+        detail: { startLine, endLine: startLine + replacementLines.length - 1 },
       })
     );
-    setApplied(true);
+    onFixApplied();
   };
 
   return (
@@ -356,7 +390,7 @@ function DebuggerContent({
 
       {/* ════ Right region: code diff + Apply Fix ════ */}
       <div className="space-y-2.5 self-start">
-        {error?.line_text || hasCorrection ? (
+        {error?.line_text || hasLineCorrection ? (
           <div
             className="rounded-xl overflow-hidden font-mono text-xs"
             style={{ border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(0,0,0,0.3)' }}
@@ -384,7 +418,7 @@ function DebuggerContent({
                 <CodeLine line={error.line_text} tint="error" />
               </div>
             )}
-            {hasCorrection && (
+            {hasLineCorrection && (
               <div
                 className="flex items-start gap-2.5 px-3 py-2"
                 style={{
@@ -398,6 +432,16 @@ function DebuggerContent({
               </div>
             )}
           </div>
+        ) : hasFullFix ? (
+          <div
+            className="rounded-xl p-3 flex items-center gap-2.5"
+            style={{ background: 'rgba(0,255,163,0.04)', border: '1px solid rgba(0,255,163,0.22)' }}
+          >
+            <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: 'rgba(0,255,163,0.7)' }} />
+            <p className="text-[11px] font-mono leading-relaxed" style={{ color: 'rgba(0,255,163,0.7)' }}>
+              Mentor ne poora fixed script taiyaar kar diya hai — Apply Fix dabaake editor buffer update karo.
+            </p>
+          </div>
         ) : error ? (
           <div
             className="rounded-xl p-3.5 text-center select-none"
@@ -409,11 +453,17 @@ function DebuggerContent({
           </div>
         ) : null}
 
-        {/* One-click Apply Fix */}
-        {error && hasCorrection && !applied && (
+        {/* One-click Apply Fix — writes straight into the active editor buffer */}
+        {error && hasFix && (
           <motion.button
             type="button"
-            onClick={applyFix}
+            onClick={() =>
+              handleApplyFix({
+                fixedCode: hasFullFix ? fullFixedCode : undefined,
+                targetLine: error.lineno || undefined,
+                replacementLine: correctedLine || undefined,
+              })
+            }
             className="relative w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold tracking-wide overflow-hidden group cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-400/60"
             style={{
               background: 'rgba(0,255,163,0.1)',
@@ -438,25 +488,8 @@ function DebuggerContent({
             </span>
           </motion.button>
         )}
-        {applied && (
-          <motion.div
-            className="flex items-center gap-2 px-3 py-2 rounded-xl"
-            style={{
-              background: 'rgba(0,255,163,0.07)',
-              border: '1px solid rgba(0,255,163,0.25)',
-              color: 'rgba(0,255,163,0.85)',
-            }}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-            <p className="text-[11px] font-mono">
-              Fix editor buffer mein apply ho gaya — <span style={{ color: 'rgba(0,255,163,1)' }}>▶ Chalao</span> dabake dekho
-            </p>
-          </motion.div>
-        )}
 
-        {error && !isFetchingDebug && !hasCorrection && !applied && friendlyMessage && (
+        {error && !isFetchingDebug && !hasFix && friendlyMessage && (
           <div
             className="rounded-xl p-3 flex items-start gap-2"
             style={{ background: 'rgba(167,139,250,0.04)', border: '1px solid rgba(167,139,250,0.1)' }}
@@ -570,6 +603,23 @@ export function TerminalDock() {
     useExecutionStore();
   const [activeTab, setActiveTab] = useState<DockTab>('output');
   const [errorFlash, setErrorFlash] = useState(false);
+  const [fixToast, setFixToast] = useState(false);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Apply Fix success path: clear the error indicator, hand the dock back to
+  // Output, and confirm with a short toast so the user knows the editor
+  // buffer was patched and is ready to re-run.
+  const handleFixApplied = useCallback(() => {
+    useExecutionStore.getState().setError(null);
+    setActiveTab('output');
+    setFixToast(true);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setFixToast(false), 3000);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
 
   // Auto-switch: error → Desi Debugger (with a brief red flash), run → Output
   const prevErrorRef = useRef<ExecutionError | null>(null);
@@ -698,13 +748,43 @@ export function TerminalDock() {
               <OutputContent output={output} isExecuting={isExecuting} executionTime={executionTime} />
             )}
             {activeTab === 'debugger' && (
-              <DebuggerContent error={error} debugResult={debugResult} isFetchingDebug={isFetchingDebug} />
+              <DebuggerContent
+                error={error}
+                debugResult={debugResult}
+                isFetchingDebug={isFetchingDebug}
+                onFixApplied={handleFixApplied}
+              />
             )}
             {activeTab === 'stdin' && <StdinContent />}
             {activeTab === 'tracer' && <TracerPanel />}
           </motion.div>
         </AnimatePresence>
       </div>
+
+      {/* ── Apply Fix success toast ── */}
+      <AnimatePresence>
+        {fixToast && (
+          <motion.div
+            className="absolute bottom-12 right-4 z-20 flex items-center gap-2 px-3 py-2 rounded-xl"
+            style={{
+              background: 'rgba(6, 12, 10, 0.92)',
+              border: '1px solid rgba(0,255,163,0.35)',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.5), 0 0 16px rgba(0,255,163,0.08)',
+              backdropFilter: 'blur(8px)',
+            }}
+            initial={{ opacity: 0, y: 10, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+            role="status"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#00FFA3' }} />
+            <p className="text-[11px] font-mono" style={{ color: 'rgba(0,255,163,0.9)' }}>
+              Fix apply ho gaya — <span style={{ color: 'rgba(0,255,163,1)' }}>▶ Chalao</span> dabake dekho
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Status bar ── */}
       <div
